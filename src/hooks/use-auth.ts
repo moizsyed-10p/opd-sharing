@@ -1,1 +1,2 @@
-export { useUser, useAuth } from "@usehercules/auth/react";
+// src/hooks/use-auth.ts
+export { useUser, useAuth } from "@clerk/react";

@@ -1,9 +1,8 @@
-import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, Link, useLocation } from "react-router-dom";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
-import { useAuth } from "@/hooks/use-auth.ts";
+import { useUser, useClerk } from "@clerk/react";
 import { SignInButton } from "@/components/ui/signin.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
-import { Button } from "@/components/ui/button.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar.tsx";
 import {
   DropdownMenu,
@@ -12,20 +11,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.tsx";
-import { Users, FileText, LayoutDashboard, LogOut, ChevronRight } from "lucide-react";
+import { Users, FileText, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { useSyncUser } from "@/hooks/use-sync-user.ts";
 
 const navItems = [
   { href: "/groups", label: "Groups", icon: Users },
 ];
 
 export default function AppLayout() {
+  useSyncUser(); // ← add this line
   const location = useLocation();
-  const { user, removeUser } = useAuth();
+ const { user } = useUser();
+const { signOut } = useClerk();
 
-  const initials = user?.profile.name
-    ? user.profile.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
+ const initials = user?.fullName
+  ? user.fullName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+  : "?";
 
   return (
     <div className="flex h-screen bg-background">
@@ -70,24 +72,24 @@ export default function AppLayout() {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-sidebar-accent/50 transition-colors cursor-pointer">
                   <Avatar className="w-7 h-7">
-                    <AvatarImage src={typeof user?.profile.avatar === "string" ? user.profile.avatar : undefined} />
+                    <AvatarImage src={user?.imageUrl} />
                     <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
                       {initials}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 text-left">
                     <p className="text-xs font-medium text-sidebar-foreground truncate">
-                      {user?.profile.name ?? "User"}
+                      {user?.fullName ?? "User"}
                     </p>
                     <p className="text-[10px] text-sidebar-foreground/50 truncate">
-                      {user?.profile.email}
+                      {user?.primaryEmailAddress?.emailAddress}
                     </p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={removeUser} className="text-destructive cursor-pointer">
+                <DropdownMenuItem onClick={() => signOut()} className="text-destructive cursor-pointer">
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign out
                 </DropdownMenuItem>

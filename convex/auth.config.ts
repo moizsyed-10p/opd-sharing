@@ -1,10 +1,8 @@
-import { AuthConfig } from "convex/server";
-
 export default {
   providers: [
     {
-      domain: process.env.HERCULES_OIDC_AUTHORITY!,
-      applicationID: process.env.HERCULES_OIDC_CLIENT_ID!,
+      domain: "https://finer-bulldog-6.clerk.accounts.dev",
+      applicationID: "convex",
     },
   ],
-} satisfies AuthConfig;
+};
