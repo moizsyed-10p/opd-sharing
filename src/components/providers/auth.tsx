@@ -1,26 +1,23 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { DefaultProviders } from "./components/providers/default.tsx";
-import AuthCallback from "./pages/auth/Callback.tsx";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import AppLayout from "./pages/app/_components/AppLayout.tsx";
-import GroupsPage from "./pages/app/groups/page.tsx";
-import GroupDetailPage from "./pages/app/groups/[groupId]/page.tsx";
+import { HerculesAuthProvider } from "@usehercules/auth/react";
 
-export default function App() {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
-    <DefaultProviders>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/" element={<Index />} />
-          <Route element={<AppLayout />}>
-            <Route path="/groups" element={<GroupsPage />} />
-            <Route path="/groups/:groupId" element={<GroupDetailPage />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </DefaultProviders>
+    <HerculesAuthProvider
+      authority={import.meta.env.VITE_HERCULES_OIDC_AUTHORITY!}
+      client_id={import.meta.env.VITE_HERCULES_OIDC_CLIENT_ID!}
+      userManagerSettings={{
+        prompt: import.meta.env.VITE_HERCULES_OIDC_PROMPT ?? "select_account",
+        response_type:
+          import.meta.env.VITE_HERCULES_OIDC_RESPONSE_TYPE ?? "code",
+        scope:
+          import.meta.env.VITE_HERCULES_OIDC_SCOPE ??
+          "openid profile email offline_access",
+        redirect_uri:
+          import.meta.env.VITE_HERCULES_OIDC_REDIRECT_URI ??
+          `${window.location.origin}/auth/callback`,
+      }}
+    >
+      {children}
+    </HerculesAuthProvider>
   );
 }
