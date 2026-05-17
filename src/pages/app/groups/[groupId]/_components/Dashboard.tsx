@@ -128,17 +128,16 @@ export default function Dashboard({ groupId }: Props) {
                             className="text-[10px] font-medium"
                             style={{ background: COLORS[i % COLORS.length] + "22", color: COLORS[i % COLORS.length] }}
                           >
-                            {m.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                            {(m.name ?? "?").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium truncate">{m.name}</span>
+                            <span className="text-sm font-medium truncate">{m.name ?? "Member"}</span>
                             {m.role === "admin" && (
                               <Badge variant="secondary" className="text-[9px] h-3.5 px-1">Admin</Badge>
                             )}
                           </div>
-                          {/* Progress bar */}
                           <div className="flex items-center gap-2 mt-1">
                             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div
@@ -152,8 +151,10 @@ export default function Dashboard({ groupId }: Props) {
                               />
                             </div>
                             <span className="text-xs text-muted-foreground shrink-0">
-                              {m.claimedCount} slip{m.claimedCount !== 1 ? "s" : ""}
-                              {m.claimedValue > 0 && ` · ₨${m.claimedValue.toLocaleString()}`}
+                              {m.claimedCount === 0
+                                ? "No claims yet"
+                                : `${m.claimedCount} slip${m.claimedCount !== 1 ? "s" : ""}${m.claimedValue > 0 ? ` · ₨${m.claimedValue.toLocaleString()}` : ""}`
+                              }
                             </span>
                           </div>
                         </div>

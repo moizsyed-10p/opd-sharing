@@ -93,7 +93,7 @@ export const groupDashboard = query({
 
         return {
           userId: m.userId,
-          name: memberUser?.name ?? "Unknown",
+          name: memberUser?.name ?? memberUser?.email?.split("@")[0] ?? "Member",
           email: memberUser?.email,
           avatarUrl: memberUser?.avatarUrl,
           role: m.role,
