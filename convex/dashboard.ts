@@ -123,8 +123,8 @@ export const groupDashboard = query({
           const file = await ctx.db.get(slip.fileId);
           return {
             slipId: u.slipId,
-            userName: actUser?.name ?? "Unknown",
-            fileName: file?.originalName ?? "Unknown",
+            userName: actUser?.name ?? actUser?.email?.split("@")[0] ?? "Member",
+            fileName: file?.originalName ?? "file",
             pageNumber: slip.pageNumber,
             effectiveAmount: slip.amountOverride ?? slip.amount,
             claimedAt: u.claimedAt,
