@@ -7,7 +7,7 @@ const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL!);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY!}>
+    <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY!} proxyUrl="/clerk">
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         {children}
       </ConvexProviderWithClerk>
