@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-        "source": "/clerk/:path*",
-        "destination": "https://clerk.opd-sharing.vercel.app/:path*"
+      "source": "/__clerk/:path*",
+      "destination": "https://clerk.opd-sharing.vercel.app/:path*"
     }
   ]
 }
