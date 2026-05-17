@@ -39,7 +39,7 @@ export default function SlipPreviewList({ fileId }: Props) {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium">Page {slip.pageNumber}</p>
             {slip.amount !== undefined && (
-              <p className="text-[10px] text-muted-foreground">₹{slip.amount}</p>
+              <p className="text-[10px] text-muted-foreground">₨{slip.amount}</p>
             )}
           </div>
           {slip.isUsed && (

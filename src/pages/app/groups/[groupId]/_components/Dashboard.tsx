@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card.tsx";
 import {
-  Layers, CheckCircle, IndianRupee, TrendingUp, FileText, Clock,
+  Layers, CheckCircle, Banknote , TrendingUp, FileText, Clock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -64,20 +64,20 @@ export default function Dashboard({ groupId }: Props) {
           icon={CheckCircle}
           label="Available"
           value={data.availableSlips.toString()}
-          sub={data.availableValue > 0 ? `₹${data.availableValue.toLocaleString()}` : "—"}
+          sub={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString()}` : "—"}
           color="text-green-500"
         />
         <StatCard
           icon={TrendingUp}
           label="Claimed"
           value={data.claimedSlips.toString()}
-          sub={data.claimedValue > 0 ? `₹${data.claimedValue.toLocaleString()}` : "—"}
+          sub={data.claimedValue > 0 ? `₨${data.claimedValue.toLocaleString()}` : "—"}
           color="text-blue-500"
         />
         <StatCard
-          icon={IndianRupee}
+          icon={Banknote}
           label="Pool Value"
-          value={data.totalPoolValue > 0 ? `₹${data.totalPoolValue.toLocaleString()}` : "—"}
+          value={data.totalPoolValue > 0 ? `₨${data.totalPoolValue.toLocaleString()}` : "—"}
           sub="Total across slips"
           color="text-amber-500"
         />
@@ -102,7 +102,7 @@ export default function Dashboard({ groupId }: Props) {
                       <YAxis hide allowDecimals={false} />
                       <RechartTooltip
                         formatter={(val: number, _: string, entry: { payload?: { value?: number } }) => [
-                          `${val} slips${(entry.payload?.value ?? 0) > 0 ? ` · ₹${(entry.payload?.value ?? 0).toLocaleString()}` : ""}`,
+                          `${val} slips${(entry.payload?.value ?? 0) > 0 ? ` · ₨${(entry.payload?.value ?? 0).toLocaleString()}` : ""}`,
                           "Claimed",
                         ]}
                         contentStyle={{ fontSize: 11, borderRadius: 6 }}
@@ -153,7 +153,7 @@ export default function Dashboard({ groupId }: Props) {
                             </div>
                             <span className="text-xs text-muted-foreground shrink-0">
                               {m.claimedCount} slip{m.claimedCount !== 1 ? "s" : ""}
-                              {m.claimedValue > 0 && ` · ₹${m.claimedValue.toLocaleString()}`}
+                              {m.claimedValue > 0 && ` · ₨${m.claimedValue.toLocaleString()}`}
                             </span>
                           </div>
                         </div>
@@ -229,7 +229,7 @@ export default function Dashboard({ groupId }: Props) {
                   </div>
                   <div className="text-right shrink-0">
                     {a.effectiveAmount !== undefined && (
-                      <p className="text-xs font-medium">₹{a.effectiveAmount.toLocaleString()}</p>
+                      <p className="text-xs font-medium">₨{a.effectiveAmount.toLocaleString()}</p>
                     )}
                     <p className="text-[10px] text-muted-foreground">
                       {formatDistanceToNow(new Date(a.claimedAt), { addSuffix: true })}

@@ -17,7 +17,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu.tsx";
 import {
-  Download, FileText, CheckCircle, IndianRupee, MoreHorizontal, RotateCcw, Pencil, Check, X, Sparkles, Loader2
+  Download, FileText, CheckCircle, Banknote, MoreHorizontal, RotateCcw, Pencil, Check, X, Sparkles, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { formatDistanceToNow } from "date-fns";
@@ -202,7 +202,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
           </div>
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
             <p className="text-xl font-bold">
-              {totalAmount > 0 ? `₹${totalAmount.toLocaleString()}` : "—"}
+              {totalAmount > 0 ? `₨${totalAmount.toLocaleString()}` : "—"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Pool Value</p>
           </div>
@@ -304,7 +304,7 @@ function SlipRow({
           {/* Amount */}
           {isEditingAmount ? (
             <div className="flex items-center gap-1.5">
-              <IndianRupee className="w-3 h-3 text-muted-foreground" />
+              <Banknote className="w-3 h-3 text-muted-foreground" />
               <Input
                 value={amountInput}
                 onChange={(e) => onAmountInputChange(e.target.value)}
@@ -329,7 +329,7 @@ function SlipRow({
               onClick={onStartEdit}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer group"
             >
-              <IndianRupee className="w-3 h-3" />
+              <Banknote className="w-3 h-3" />
               <span>
                 {slip.effectiveAmount !== undefined
                   ? slip.effectiveAmount.toLocaleString()

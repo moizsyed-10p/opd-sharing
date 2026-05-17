@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty.tsx";
-import { Download, FileText, IndianRupee } from "lucide-react";
+import { Download, FileText, Banknote } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 type Props = { groupId: Id<"groups"> };
@@ -46,7 +46,7 @@ export default function MyClaims({ groupId }: Props) {
         {totalValue > 0 && (
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Total value</p>
-            <p className="text-2xl font-bold text-primary">₹{totalValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-primary">₨{totalValue.toLocaleString()}</p>
           </div>
         )}
       </div>
@@ -73,7 +73,7 @@ export default function MyClaims({ groupId }: Props) {
                 <div className="flex items-center gap-2 mt-0.5">
                   {claim.effectiveAmount !== undefined && (
                     <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                      <IndianRupee className="w-3 h-3" />
+                      <Banknote className="w-3 h-3" />
                       {claim.effectiveAmount.toLocaleString()}
                     </span>
                   )}
