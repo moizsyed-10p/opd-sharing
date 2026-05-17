@@ -352,6 +352,19 @@ function SlipRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 shrink-0">
+        {/* View button — always visible if url exists */}
+        {slip.url && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="cursor-pointer h-7 text-xs gap-1.5"
+            onClick={() => window.open(slip.url!, "_blank")}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            View
+          </Button>
+        )}
+
         {!slip.isUsed && (
           <TooltipProvider>
             <Tooltip>
@@ -385,7 +398,7 @@ function SlipRow({
           </Button>
         )}
 
-        {isAdmin && (
+        {isAdmin && slip.isUsed && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="cursor-pointer h-7 w-7 p-0">
@@ -394,21 +407,12 @@ function SlipRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onClick={() => window.open(slip.url ?? "#", "_blank")}
-                className="cursor-pointer text-xs"
+                onClick={onUnclaim}
+                className="cursor-pointer text-xs text-destructive focus:text-destructive"
               >
-                <FileText className="w-3.5 h-3.5 mr-2" />
-                Preview
+                <RotateCcw className="w-3.5 h-3.5 mr-2" />
+                Unclaim
               </DropdownMenuItem>
-              {slip.isUsed && (
-                <DropdownMenuItem
-                  onClick={onUnclaim}
-                  className="cursor-pointer text-xs text-destructive focus:text-destructive"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 mr-2" />
-                  Unclaim
-                </DropdownMenuItem>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
