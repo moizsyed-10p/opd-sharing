@@ -1,5 +1,5 @@
 import { mutation, query, internalMutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel.d.ts";
 
@@ -14,7 +14,16 @@ async function requireAuthUser(ctx: MutationCtx) {
   return user;
 }
 
-// List all available slips for a group (with URLs and claimer info)
+async function getAuthUser(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  return ctx.db
+    .query("users")
+    .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+    .unique();
+}
+
+// List slips from current user's perspective
 export const listGroupSlips = query({
   args: {
     groupId: v.id("groups"),
@@ -29,23 +38,19 @@ export const listGroupSlips = query({
     storageId: string;
     amount?: number;
     amountOverride?: number;
-    isUsed: boolean;
+    isUsed: boolean;        // global: true if ALL members claimed
+    isClaimedByMe: boolean; // per-user claim status
     usedBy?: Id<"users">;
     usedAt?: string;
     url: string | null;
     fileName: string;
     claimerName: string | undefined;
     effectiveAmount: number | undefined;
+    claimedByCount: number; // how many members have claimed this slip
   }>> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-      .unique();
+    const user = await getAuthUser(ctx);
     if (!user) return [];
 
-    // Verify membership
     const membership = await ctx.db
       .query("groupMembers")
       .withIndex("by_group_and_user", (q) => q.eq("groupId", args.groupId).eq("userId", user._id))
@@ -58,21 +63,46 @@ export const listGroupSlips = query({
       .order("asc")
       .collect();
 
-    const filtered = slips.filter((s) => {
-      if (!args.filter || args.filter === "all") return true;
-      if (args.filter === "available") return !s.isUsed;
-      if (args.filter === "claimed") return s.isUsed;
-      return true;
-    });
+    // Get all usage records for this group in one query
+    const allUsages = await ctx.db
+      .query("userOpdUsage")
+      .withIndex("by_group_and_user", (q) => q.eq("groupId", args.groupId))
+      .collect();
 
-    return Promise.all(
-      filtered.map(async (s) => {
+    // Get total member count for this group
+    const allMembers = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+      .collect();
+    const memberCount = allMembers.length;
+
+    // Build a set of slipIds claimed by current user
+    const myClaimedSlipIds = new Set(
+      allUsages.filter((u) => u.userId === user._id).map((u) => u.slipId)
+    );
+
+    // Build a map of slipId -> claim count
+    const claimCountMap = new Map<string, number>();
+    for (const u of allUsages) {
+      claimCountMap.set(u.slipId, (claimCountMap.get(u.slipId) ?? 0) + 1);
+    }
+
+    const results = await Promise.all(
+      slips.map(async (s) => {
+        const isClaimedByMe = myClaimedSlipIds.has(s._id);
+        const claimedByCount = claimCountMap.get(s._id) ?? 0;
+        const isFullyUsed = claimedByCount >= memberCount;
+
         const url = await ctx.storage.getUrl(s.storageId as Id<"_storage">);
         const file = await ctx.db.get(s.fileId);
         const claimer = s.usedBy ? await ctx.db.get(s.usedBy) : null;
         const effectiveAmount = s.amountOverride ?? s.amount;
+
         return {
           ...s,
+          isUsed: isFullyUsed,       // true only when ALL members claimed
+          isClaimedByMe,             // true if current user claimed it
+          claimedByCount,
           url,
           fileName: file?.originalName ?? "Unknown file",
           claimerName: claimer?.name,
@@ -80,10 +110,18 @@ export const listGroupSlips = query({
         };
       })
     );
+
+    // Filter based on current user's perspective
+    return results.filter((s) => {
+      if (!args.filter || args.filter === "all") return true;
+      if (args.filter === "available") return !s.isClaimedByMe; // not yet claimed by ME
+      if (args.filter === "claimed") return s.isClaimedByMe;    // claimed by ME
+      return true;
+    });
   },
 });
 
-// Atomic claim: check-then-insert in one mutation (Convex mutations are serialized = no races)
+// Claim a slip for the current user
 export const claimSlip = mutation({
   args: { slipId: v.id("opdSlips") },
   handler: async (ctx, args) => {
@@ -92,28 +130,25 @@ export const claimSlip = mutation({
     const slip = await ctx.db.get(args.slipId);
     if (!slip) throw new ConvexError({ message: "Slip not found", code: "NOT_FOUND" });
 
-    // Verify membership
     const membership = await ctx.db
       .query("groupMembers")
       .withIndex("by_group_and_user", (q) => q.eq("groupId", slip.groupId).eq("userId", user._id))
       .unique();
     if (!membership) throw new ConvexError({ message: "Not a group member", code: "FORBIDDEN" });
 
-    // Atomic check — already claimed?
-    if (slip.isUsed) {
-      throw new ConvexError({ message: "This slip has already been claimed", code: "CONFLICT" });
+    // Check if current user already claimed this slip
+    const existingUsage = await ctx.db
+      .query("userOpdUsage")
+      .withIndex("by_slip_and_user", (q) => q.eq("slipId", args.slipId).eq("userId", user._id))
+      .unique();
+
+    if (existingUsage) {
+      throw new ConvexError({ message: "You have already claimed this slip", code: "CONFLICT" });
     }
 
     const now = new Date().toISOString();
 
-    // Mark slip as used
-    await ctx.db.patch(args.slipId, {
-      isUsed: true,
-      usedBy: user._id,
-      usedAt: now,
-    });
-
-    // Write usage ledger
+    // Write usage record for this user
     await ctx.db.insert("userOpdUsage", {
       userId: user._id,
       slipId: args.slipId,
@@ -121,15 +156,37 @@ export const claimSlip = mutation({
       claimedAt: now,
     });
 
-    // Return a fresh signed URL for immediate download
+    // Check if all members have now claimed this slip
+    const allMembers = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group", (q) => q.eq("groupId", slip.groupId))
+      .collect();
+
+    const allUsages = await ctx.db
+      .query("userOpdUsage")
+      .withIndex("by_slip", (q) => q.eq("slipId", args.slipId))
+      .collect();
+
+    if (allUsages.length >= allMembers.length) {
+      // All members claimed — mark as globally used
+      await ctx.db.patch(args.slipId, {
+        isUsed: true,
+        usedBy: user._id,
+        usedAt: now,
+      });
+    }
+
     const url = await ctx.storage.getUrl(slip.storageId as Id<"_storage">);
     return { url };
   },
 });
 
-// Unclaim a slip (admin only)
+// Unclaim a slip for a specific user (admin only)
 export const unclaimSlip = mutation({
-  args: { slipId: v.id("opdSlips") },
+  args: {
+    slipId: v.id("opdSlips"),
+    targetUserId: v.optional(v.id("users")), // if not provided, unclaims for current user
+  },
   handler: async (ctx, args) => {
     const user = await requireAuthUser(ctx);
     const slip = await ctx.db.get(args.slipId);
@@ -143,14 +200,21 @@ export const unclaimSlip = mutation({
       throw new ConvexError({ message: "Only admins can unclaim slips", code: "FORBIDDEN" });
     }
 
-    await ctx.db.patch(args.slipId, { isUsed: false, usedBy: undefined, usedAt: undefined });
+    const targetId = args.targetUserId ?? user._id;
 
-    // Remove usage records
-    const usages = await ctx.db
+    // Remove usage record for target user
+    const usage = await ctx.db
       .query("userOpdUsage")
-      .withIndex("by_slip", (q) => q.eq("slipId", args.slipId))
-      .collect();
-    for (const u of usages) await ctx.db.delete(u._id);
+      .withIndex("by_slip_and_user", (q) => q.eq("slipId", args.slipId).eq("userId", targetId))
+      .unique();
+    if (usage) await ctx.db.delete(usage._id);
+
+    // Unmark global isUsed since not all members have claimed anymore
+    await ctx.db.patch(args.slipId, {
+      isUsed: false,
+      usedBy: undefined,
+      usedAt: undefined,
+    });
   },
 });
 
@@ -174,18 +238,19 @@ export const updateSlipAmount = mutation({
   },
 });
 
-// Internal mutation: set extracted amount on a slip (no auth check, called from actions)
+// Internal mutation: set extracted amount
 export const setExtractedAmount = internalMutation({
   args: { slipId: v.id("opdSlips"), amount: v.number() },
   handler: async (ctx, args) => {
     const slip = await ctx.db.get(args.slipId);
     if (!slip) return;
-    // Only set if not already overridden by user
     if (slip.amountOverride === undefined) {
       await ctx.db.patch(args.slipId, { amount: args.amount });
     }
   },
 });
+
+// My claimed slips
 export const myClaimedSlips = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, args): Promise<Array<{
@@ -196,12 +261,7 @@ export const myClaimedSlips = query({
     effectiveAmount: number | undefined;
     url: string | null;
   }>> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-      .unique();
+    const user = await getAuthUser(ctx);
     if (!user) return [];
 
     const usages = await ctx.db
@@ -232,5 +292,27 @@ export const myClaimedSlips = query({
       effectiveAmount: number | undefined;
       url: string | null;
     }>);
+  },
+});
+
+// Save extracted amounts from client-side OCR
+export const saveExtractedAmounts = mutation({
+  args: {
+    amounts: v.array(v.object({
+      slipId: v.id("opdSlips"),
+      amount: v.number(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
+
+    for (const { slipId, amount } of args.amounts) {
+      const slip = await ctx.db.get(slipId);
+      if (!slip) continue;
+      if (slip.amountOverride === undefined && slip.amount === undefined) {
+        await ctx.db.patch(slipId, { amount });
+      }
+    }
   },
 });

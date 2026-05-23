@@ -3,120 +3,145 @@
 import { action, internalAction } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { api, internal } from "./_generated/api.js";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { Id } from "./_generated/dataModel.d.ts";
 
-// Disable worker for Node.js environment
-pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-
-/**
- * Extract text from a PDF buffer using pdf.js
- */
-async function extractTextFromPdf(pdfBuffer: ArrayBuffer): Promise<string> {
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(pdfBuffer),
-    useWorkerFetch: false,
-    useSystemFonts: true,
-    disableFontFace: true,
-  });
-
-  const pdf = await loadingTask.promise;
-  const texts: string[] = [];
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item) => {
-        if ("str" in item) return item.str;
-        return "";
-      })
-      .join(" ");
-    texts.push(pageText);
-  }
-
-  return texts.join("\n");
+function wordsToNumber(text: string): number | null {
+  const words = text.toLowerCase();
+  const hundreds = words.match(/(\w+)\s+hundred/);
+  if (!hundreds) return null;
+  const map: Record<string, number> = {
+    one: 100, two: 200, three: 300, four: 400, five: 500,
+    six: 600, seven: 700, eight: 800, nine: 900,
+  };
+  return map[hundreds[1]] ?? null;
 }
 
-/**
- * Parse amount from text using multiple regex patterns common in OPD slips.
- * Looks for INR / Rs. / ₹ patterns and common OPD label keywords.
- */
+export const extractAmountFromImage = action({
+  args: {
+    storageId: v.string(),
+  },
+  handler: async (ctx, args): Promise<number | null> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const url = await ctx.storage.getUrl(args.storageId as Id<"_storage">);
+    if (!url) return null;
+
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    const apiKey = process.env.GOOGLE_VISION_API_KEY;
+    if (!apiKey) return null;
+
+    // Send as PDF document instead of IMAGE — Vision supports PDFs via document text detection
+    const visionResponse = await fetch(
+      `https://vision.googleapis.com/v1/files:annotate?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [
+            {
+              inputConfig: {
+                content: base64,
+                mimeType: "application/pdf",
+              },
+              features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
+              pages: [1], // only first page of each slip PDF
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!visionResponse.ok) {
+      console.log("Vision error:", await visionResponse.text());
+      return null;
+    }
+
+    const data = await visionResponse.json() as {
+      responses: Array<{
+        responses?: Array<{
+          fullTextAnnotation?: { text: string };
+        }>;
+      }>;
+    };
+
+    const text = data.responses[0]?.responses?.[0]?.fullTextAnnotation?.text ?? "";
+    return extractAmountFromText(text);
+  },
+});
+
+// Keep the regex-based extraction as fallback for text-based PDFs
 function extractAmountFromText(text: string): number | null {
-  // Normalize: remove extra spaces, lowercase for keyword matching
   const normalized = text.replace(/\s+/g, " ").trim();
 
-  // Priority patterns — labeled amounts near OPD keywords
   const labeledPatterns = [
-    // "OPD Amount: 500" or "OPD Charges: ₹500"
-    /(?:opd\s*(?:amount|charge[s]?|fee[s]?|total|bill)[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
-    // "Total Amount: ₹500" or "Amount: 500.00"
-    /(?:total\s*(?:amount|charge[s]?|fee[s]?)[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
-    // "Amount Payable: 500"
-    /(?:amount\s*(?:payable|charged|billed)[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
-    // "Net Amount: ₹500"
-    /(?:net\s*amount[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
-    // "Consultation Charges: 500"
-    /(?:consultation\s*(?:charge[s]?|fee[s]?)[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
-    // "Bill Amount: 500" or "Billed: ₹500"
-    /(?:bill(?:ed)?\s*(?:amount)?[:\s]+)(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:grand\s*total|net\s*total|total\s*amount|total\s*payable|total\s*due|total\s*bill)[:\s]+(?:rs\.?|pkr|inr|₹|rupees?)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:amount\s*(?:payable|charged|billed|due))[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:net\s*amount)[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:opd\s*(?:amount|charges?|fee|total|bill))[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:bill(?:ed)?\s*(?:amount)?)[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:consultation\s*(?:charges?|fee))[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:net\s*received)[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:gross\s*amount)[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:amount\s*in\s*words)[:\s\w]+rupees[:\s]+(?:rs\.?|pkr|inr|₹)?\s*(\d[\d,]*(?:\.\d{1,2})?)/gi,
+    /(?:rate|amount)\s+(\d[\d,]*(?:\.\d{1,2})?)(?:\s*$)/gim,
+    
   ];
 
+  const candidates: number[] = [];
   for (const pattern of labeledPatterns) {
     pattern.lastIndex = 0;
     const match = pattern.exec(normalized);
     if (match) {
-      const cleaned = match[1].replace(/,/g, "");
-      const parsed = parseFloat(cleaned);
-      if (!isNaN(parsed) && parsed > 0 && parsed < 1000000) {
-        return parsed;
-      }
+      const parsed = parseFloat(match[1].replace(/,/g, ""));
+      if (!isNaN(parsed) && parsed > 0 && parsed < 1000000) candidates.push(parsed);
     }
   }
-
-  // Fallback: find any ₹/Rs./INR prefixed amounts
-  const currencyPattern = /(?:rs\.?|inr|₹)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
-  const currencyMatches: number[] = [];
+  if (candidates.length > 0) return Math.max(...candidates);
+ 
+  // Fallback: largest Rs./PKR prefixed amount
+  const fallbackPattern = /(?:rs\.?|pkr|inr|₹)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
+  const fallback: number[] = [];
   let match: RegExpExecArray | null;
-  while ((match = currencyPattern.exec(normalized)) !== null) {
-    const cleaned = match[1].replace(/,/g, "");
-    const parsed = parseFloat(cleaned);
-    if (!isNaN(parsed) && parsed > 0 && parsed < 1000000) {
-      currencyMatches.push(parsed);
-    }
+  while ((match = fallbackPattern.exec(normalized)) !== null) {
+    const parsed = parseFloat(match[1].replace(/,/g, ""));
+    if (!isNaN(parsed) && parsed > 0 && parsed < 1000000) fallback.push(parsed);
   }
+  if (fallback.length > 0) return Math.max(...fallback);
 
-  if (currencyMatches.length > 0) {
-    // Return the largest amount as it's most likely the total
-    return Math.max(...currencyMatches);
+  // Fallback: amount in words (e.g. "EIGHT HUNDRED RUPEES ONLY")
+  const wordsMatch = normalized.match(/amount\s+in\s+words[:\s]+([a-z\s]+)rupees/i);
+  if (wordsMatch) {
+    const fromWords = wordsToNumber(wordsMatch[1]);
+    if (fromWords) return fromWords;
   }
 
   return null;
+  // return fallback.length > 0 ? Math.max(...fallback) : null;
 }
 
-/**
- * Internal action: process a single slip for amount extraction.
- */
 export const extractAmountForSlip = internalAction({
   args: {
     slipId: v.id("opdSlips"),
     storageId: v.string(),
   },
-  handler: async (ctx, args): Promise<{ slipId: string; amount: number | null; text: string }> => {
+  handler: async (ctx, args): Promise<{ slipId: string; amount: number | null }> => {
     try {
       const url = await ctx.storage.getUrl(args.storageId as Id<"_storage">);
-      if (!url) {
-        return { slipId: args.slipId, amount: null, text: "" };
-      }
+      if (!url) return { slipId: args.slipId, amount: null };
 
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch slip: ${response.statusText}`);
-      const buffer = await response.arrayBuffer();
+      if (!response.ok) return { slipId: args.slipId, amount: null };
 
-      const text = await extractTextFromPdf(buffer);
+      // Only try text extraction — no pdfjs, no OCR on server
+      // OCR is now handled client-side in PdfUploader
+      const text = await response.text().catch(() => "");
       const amount = extractAmountFromText(text);
 
-      // Persist extracted amount to the slip
       if (amount !== null) {
         await ctx.runMutation(internal.slips.setExtractedAmount, {
           slipId: args.slipId,
@@ -124,18 +149,13 @@ export const extractAmountForSlip = internalAction({
         });
       }
 
-      return { slipId: args.slipId, amount, text: text.slice(0, 500) };
-    } catch (err) {
-      // Don't throw — just return null amount so processing continues
-      return { slipId: args.slipId, amount: null, text: "" };
+      return { slipId: args.slipId, amount };
+    } catch {
+      return { slipId: args.slipId, amount: null };
     }
   },
 });
 
-/**
- * Public action: run smart amount matching on all slips of a file (or a group).
- * Called from the frontend after PDF splitting completes, or on-demand.
- */
 export const runSmartAmountMatching = action({
   args: {
     fileId: v.optional(v.id("opdFiles")),
@@ -145,13 +165,11 @@ export const runSmartAmountMatching = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
 
-    // Get slips to process
     const slips = await ctx.runQuery(api.slips.listGroupSlips, {
       groupId: args.groupId,
       filter: "all",
     });
 
-    // Filter by file if specified, and only process slips without an amount set
     const toProcess = slips.filter((s) => {
       const matchesFile = args.fileId ? s.fileId === args.fileId : true;
       const needsAmount = s.amount === undefined && s.amountOverride === undefined;
@@ -161,7 +179,6 @@ export const runSmartAmountMatching = action({
     let matched = 0;
     let failed = 0;
 
-    // Process slips concurrently in batches of 5
     const BATCH_SIZE = 5;
     for (let i = 0; i < toProcess.length; i += BATCH_SIZE) {
       const batch = toProcess.slice(i, i + BATCH_SIZE);

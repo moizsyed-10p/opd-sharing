@@ -17,7 +17,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu.tsx";
 import {
-  Download, FileText, CheckCircle, Banknote, MoreHorizontal, RotateCcw, Pencil, Check, X, Sparkles, Loader2
+  Download, FileText, CheckCircle, Banknote, MoreHorizontal, RotateCcw, Pencil, Check, X, Sparkles, Loader2, Users
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { formatDistanceToNow } from "date-fns";
@@ -39,6 +39,8 @@ type Slip = {
   amount?: number;
   amountOverride?: number;
   isUsed: boolean;
+  isClaimedByMe: boolean;
+  claimedByCount: number;
   usedBy?: Id<"users">;
   usedAt?: string;
   url: string | null;
@@ -91,7 +93,6 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
         } : undefined,
       });
       if (url) {
-        // Trigger download
         const a = document.createElement("a");
         a.href = url;
         a.download = `slip-page-${slip.pageNumber}.pdf`;
@@ -153,15 +154,15 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
     );
   }
 
-  const available = slips.filter((s) => !s.isUsed).length;
-  const claimed = slips.filter((s) => s.isUsed).length;
+  const available = slips.filter((s) => !s.isClaimedByMe).length;
+  const claimed = slips.filter((s) => s.isClaimedByMe).length;
   const totalAmount = slips
-    .filter((s) => !s.isUsed && s.effectiveAmount !== undefined)
+    .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined)
     .reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
 
   return (
     <div className="space-y-4">
-      {/* Header row with smart match button */}
+      {/* Header row */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">Slip Pool</h3>
         {slips.length > 0 && (
@@ -189,22 +190,23 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
           </TooltipProvider>
         )}
       </div>
-      {/* Stats bar */}
+
+      {/* Stats bar — per user perspective */}
       {slips.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
             <p className="text-xl font-bold text-primary">{available}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Available</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Available for you</p>
           </div>
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
             <p className="text-xl font-bold">{claimed}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Claimed</p>
+            <p className="text-xs text-muted-foreground mt-0.5">You claimed</p>
           </div>
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
             <p className="text-xl font-bold">
               {totalAmount > 0 ? `₨${totalAmount.toLocaleString()}` : "—"}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">Pool Value</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Your pool value</p>
           </div>
         </div>
       )}
@@ -218,7 +220,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
         </TabsList>
       </Tabs>
 
-      {/* Slip grid */}
+      {/* Slip list */}
       {slips.length === 0 ? (
         <Empty>
           <EmptyHeader>
@@ -275,16 +277,16 @@ function SlipRow({
   return (
     <div className={cn(
       "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-      slip.isUsed
+      slip.isClaimedByMe
         ? "bg-muted/20 border-border/50 opacity-70"
         : "bg-card hover:bg-muted/20 border-border"
     )}>
       {/* Status icon */}
       <div className={cn(
         "w-8 h-8 rounded-md flex items-center justify-center shrink-0",
-        slip.isUsed ? "bg-muted" : "bg-primary/10"
+        slip.isClaimedByMe ? "bg-muted" : "bg-primary/10"
       )}>
-        {slip.isUsed
+        {slip.isClaimedByMe
           ? <CheckCircle className="w-4 h-4 text-green-500" />
           : <FileText className="w-4 h-4 text-primary" />
         }
@@ -296,15 +298,20 @@ function SlipRow({
           <span className="text-sm font-medium">
             {fileShortName} — Page {slip.pageNumber}
           </span>
-          {slip.isUsed && (
+          {slip.isClaimedByMe && (
             <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Claimed</Badge>
+          )}
+          {slip.isUsed && (
+            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">
+              Fully used
+            </Badge>
           )}
         </div>
         <div className="flex items-center gap-3 mt-0.5">
           {/* Amount */}
           {isEditingAmount ? (
             <div className="flex items-center gap-1.5">
-              <Banknote className="w-3 h-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">₨</span>
               <Input
                 value={amountInput}
                 onChange={(e) => onAmountInputChange(e.target.value)}
@@ -329,7 +336,7 @@ function SlipRow({
               onClick={onStartEdit}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer group"
             >
-              <Banknote className="w-3 h-3" />
+              <span className="text-xs">₨</span>
               <span>
                 {slip.effectiveAmount !== undefined
                   ? slip.effectiveAmount.toLocaleString()
@@ -339,12 +346,11 @@ function SlipRow({
             </button>
           )}
 
-          {slip.isUsed && slip.claimerName && (
-            <span className="text-xs text-muted-foreground">
-              by {slip.claimerName}
-              {slip.usedAt && (
-                <> · {formatDistanceToNow(new Date(slip.usedAt), { addSuffix: true })}</>
-              )}
+          {/* Claimed by count — visible to admin */}
+          {isAdmin && slip.claimedByCount > 0 && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Users className="w-3 h-3" />
+              {slip.claimedByCount} claimed
             </span>
           )}
         </div>
@@ -352,7 +358,7 @@ function SlipRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* View button — always visible if url exists */}
+        {/* View button */}
         {slip.url && (
           <Button
             size="sm"
@@ -365,7 +371,8 @@ function SlipRow({
           </Button>
         )}
 
-        {!slip.isUsed && (
+        {/* Claim button — only if not claimed by me */}
+        {!slip.isClaimedByMe && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -386,7 +393,8 @@ function SlipRow({
           </TooltipProvider>
         )}
 
-        {slip.isUsed && slip.url && (
+        {/* Re-download if already claimed by me */}
+        {slip.isClaimedByMe && slip.url && (
           <Button
             size="sm"
             variant="secondary"
@@ -398,7 +406,8 @@ function SlipRow({
           </Button>
         )}
 
-        {isAdmin && slip.isUsed && (
+        {/* Admin unclaim dropdown */}
+        {isAdmin && slip.isClaimedByMe && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="cursor-pointer h-7 w-7 p-0">

@@ -57,28 +57,28 @@ export default function Dashboard({ groupId }: Props) {
           icon={Layers}
           label="Total Slips"
           value={data.totalSlips.toString()}
-          sub={`${utilizationPct}% utilized`}
+          sub={`${data.fullyUsedSlips} fully used by all`}
           color="text-primary"
         />
         <StatCard
           icon={CheckCircle}
-          label="Available"
+          label="Available for You"
           value={data.availableSlips.toString()}
           sub={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString()}` : "—"}
           color="text-green-500"
         />
         <StatCard
           icon={TrendingUp}
-          label="Claimed"
+          label="You Claimed"
           value={data.claimedSlips.toString()}
           sub={data.claimedValue > 0 ? `₨${data.claimedValue.toLocaleString()}` : "—"}
           color="text-blue-500"
         />
         <StatCard
           icon={Banknote}
-          label="Pool Value"
-          value={data.totalPoolValue > 0 ? `₨${data.totalPoolValue.toLocaleString()}` : "—"}
-          sub="Total across slips"
+          label="Your Pool Value"
+          value={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString()}` : "—"}
+          sub="Available to claim"
           color="text-amber-500"
         />
       </div>
@@ -176,7 +176,7 @@ export default function Dashboard({ groupId }: Props) {
               <p className="text-xs text-muted-foreground text-center py-4">No files uploaded yet</p>
             ) : (
               data.slipsByFile.map((f) => {
-                const pct = f.total > 0 ? Math.round((f.claimed / f.total) * 100) : 0;
+                const pct = f.total > 0 ? Math.round((f.claimedByMe / f.total) * 100) : 0;
                 const shortName = f.fileName.replace(/\.pdf$/i, "").slice(0, 40);
                 return (
                   <div key={f.fileId} className="space-y-1.5">
@@ -186,7 +186,10 @@ export default function Dashboard({ groupId }: Props) {
                         <span className="text-xs font-medium truncate">{shortName}</span>
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">
-                        {f.claimed}/{f.total}
+                        {f.claimedByMe}/{f.total}
+                        {f.fullyUsed > 0 && (
+                          <span className="text-muted-foreground/60"> · {f.fullyUsed} done</span>
+                        )}
                       </span>
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">

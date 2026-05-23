@@ -62,5 +62,6 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_slip", ["slipId"])
-    .index("by_group_and_user", ["groupId", "userId"]),
+    .index("by_group_and_user", ["groupId", "userId"])
+    .index("by_slip_and_user", ["slipId", "userId"]),
 });
