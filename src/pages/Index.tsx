@@ -35,9 +35,7 @@ export default function Index() {
       {/* Header */}
       <header className="border-b px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-            <FileText className="w-4 h-4 text-primary-foreground" />
-          </div>
+          <img src="/logo.png" alt="OPD Sharing" className="w-7 h-7" />
           <span className="font-semibold text-sm">OPD Manager</span>
         </div>
         <AuthLoading>

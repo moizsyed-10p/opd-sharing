@@ -107,9 +107,7 @@ const { signOut } = useClerk();
         <Unauthenticated>
           <div className="flex items-center justify-center h-full">
             <div className="text-center space-y-4">
-              <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto">
-                <FileText className="w-7 h-7 text-primary" />
-              </div>
+              <img src="/logo.svg" alt="OPD Sharing" className="w-14 h-14 mx-auto"/>
               <h2 className="text-xl font-semibold">Sign in to continue</h2>
               <p className="text-muted-foreground text-sm">You need to be signed in to use OPD Manager</p>
               <SignInButton />
