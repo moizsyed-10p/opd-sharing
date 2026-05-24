@@ -46,7 +46,7 @@ export default function MyClaims({ groupId }: Props) {
         {totalValue > 0 && (
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Total value</p>
-            <p className="text-2xl font-bold text-primary">₨{totalValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-primary">₨{totalValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
           </div>
         )}
       </div>
@@ -74,7 +74,7 @@ export default function MyClaims({ groupId }: Props) {
                   {claim.effectiveAmount !== undefined && (
                     <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
                       <Banknote className="w-3 h-3" />
-                      {claim.effectiveAmount.toLocaleString()}
+                      {claim.effectiveAmount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </span>
                   )}
                   {claim.usedAt && (

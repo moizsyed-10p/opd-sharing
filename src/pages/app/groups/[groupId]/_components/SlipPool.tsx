@@ -264,14 +264,14 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `smart-match-₨${total.toLocaleString()}.pdf`;
+      a.download = `smart-match-₨${total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       setSmartMatchState({ step: "done", total, count: selectedSlips.length });
-      toast.success(`Downloaded ${selectedSlips.length} slips totalling ₨${total.toLocaleString()}`);
+      toast.success(`Downloaded ${selectedSlips.length} slips totalling ₨${total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`);
     } catch (err) {
       const msg = err instanceof ConvexError
         ? (err.data as { message: string }).message
@@ -400,7 +400,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Available pool: ₨{totalAmount.toLocaleString()} across {available} unclaimed slip{available !== 1 ? "s" : ""}
+                    Available pool: ₨{totalAmount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} across {available} unclaimed slip{available !== 1 ? "s" : ""}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -422,7 +422,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Selected slips</p>
                     <Badge variant="secondary">
-                      ₨{smartMatchState.total.toLocaleString()}
+                      ₨{smartMatchState.total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </Badge>
                   </div>
 
@@ -430,7 +430,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                     <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                       <p className="text-xs text-amber-600">
-                        Best available combination (₨{smartMatchState.total.toLocaleString()}) is less than your target of ₨{parseFloat(targetAmount).toLocaleString()}
+                        Best available combination (₨{smartMatchState.total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}) is less than your target of ₨{parseFloat(targetAmount).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </p>
                     </div>
                   )}
@@ -439,7 +439,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                     <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
                       <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                       <p className="text-xs text-blue-600">
-                        ₨{(smartMatchState.total - parseFloat(targetAmount)).toLocaleString()} over target
+                        ₨{(smartMatchState.total - parseFloat(targetAmount)).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} over target
                       </p>
                     </div>
                   )}
@@ -454,7 +454,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                           </p>
                         </div>
                         <span className="text-xs font-medium shrink-0">
-                          ₨{(slip.effectiveAmount ?? 0).toLocaleString()}
+                          ₨{(slip.effectiveAmount ?? 0).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </span>
                       </div>
                     ))}
@@ -462,7 +462,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
 
                   <div className="flex items-center justify-between pt-1 border-t">
                     <span className="text-xs text-muted-foreground">{smartMatchState.selectedSlips.length} slip{smartMatchState.selectedSlips.length !== 1 ? "s" : ""}</span>
-                    <span className="text-sm font-semibold">₨{smartMatchState.total.toLocaleString()}</span>
+                    <span className="text-sm font-semibold">₨{smartMatchState.total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                   </div>
                 </div>
 
@@ -507,7 +507,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                   <p className="text-xs text-muted-foreground mt-1">
                     {smartMatchState.count} slip{smartMatchState.count !== 1 ? "s" : ""} claimed & downloaded
                   </p>
-                  <p className="text-sm font-semibold mt-1">₨{smartMatchState.total.toLocaleString()}</p>
+                  <p className="text-sm font-semibold mt-1">₨{smartMatchState.total.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                 </div>
                 <Button size="sm" onClick={() => setSmartMatchOpen(false)} className="cursor-pointer w-full">
                   Close
@@ -539,16 +539,16 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
       {slips.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
-            <p className="text-xl font-bold text-primary">{available}</p>
+            <p className="text-lg font-bold text-primary truncate">{available}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Available for you</p>
           </div>
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
-            <p className="text-xl font-bold">{claimed}</p>
+            <p className="text-lg font-bold truncate">{claimed}</p>
             <p className="text-xs text-muted-foreground mt-0.5">You claimed</p>
           </div>
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
-            <p className="text-xl font-bold">
-              {totalAmount > 0 ? `₨${totalAmount.toLocaleString()}` : "—"}
+            <p className="text-lg font-bold truncate">
+              {totalAmount > 0 ? `₨${totalAmount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Your pool value</p>
           </div>
@@ -680,7 +680,7 @@ function SlipRow({
               <span className="text-xs">₨</span>
               <span>
                 {slip.effectiveAmount !== undefined
-                  ? slip.effectiveAmount.toLocaleString()
+                  ? slip.effectiveAmount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                   : "Set amount"}
               </span>
               <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />

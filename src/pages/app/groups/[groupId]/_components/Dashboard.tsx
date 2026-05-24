@@ -64,20 +64,20 @@ export default function Dashboard({ groupId }: Props) {
           icon={CheckCircle}
           label="Available for You"
           value={data.availableSlips.toString()}
-          sub={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString()}` : "—"}
+          sub={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
           color="text-green-500"
         />
         <StatCard
           icon={TrendingUp}
           label="You Claimed"
           value={data.claimedSlips.toString()}
-          sub={data.claimedValue > 0 ? `₨${data.claimedValue.toLocaleString()}` : "—"}
+          sub={data.claimedValue > 0 ? `₨${data.claimedValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
           color="text-blue-500"
         />
         <StatCard
           icon={Banknote}
           label="Your Pool Value"
-          value={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString()}` : "—"}
+          value={data.availableValue > 0 ? `₨${data.availableValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
           sub="Available to claim"
           color="text-amber-500"
         />
@@ -153,7 +153,7 @@ export default function Dashboard({ groupId }: Props) {
                             <span className="text-xs text-muted-foreground shrink-0">
                               {m.claimedCount === 0
                                 ? "No claims yet"
-                                : `${m.claimedCount} slip${m.claimedCount !== 1 ? "s" : ""}${m.claimedValue > 0 ? ` · ₨${m.claimedValue.toLocaleString()}` : ""}`
+                                : `${m.claimedCount} slip${m.claimedCount !== 1 ? "s" : ""}${m.claimedValue > 0 ? ` · ₨${m.claimedValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ""}`
                               }
                             </span>
                           </div>
@@ -233,7 +233,7 @@ export default function Dashboard({ groupId }: Props) {
                   </div>
                   <div className="text-right shrink-0">
                     {a.effectiveAmount !== undefined && (
-                      <p className="text-xs font-medium">₨{a.effectiveAmount.toLocaleString()}</p>
+                      <p className="text-xs font-medium">₨{a.effectiveAmount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                     )}
                     <p className="text-[10px] text-muted-foreground">
                       {formatDistanceToNow(new Date(a.claimedAt), { addSuffix: true })}
@@ -261,10 +261,10 @@ function StatCard({ icon: Icon, label, value, sub, color }: StatCardProps) {
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-2xl font-bold mt-0.5">{value}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>
+          <p className="font-bold mt-0.5 truncate text-lg leading-tight">{value}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">{sub}</p>
         </div>
         <div className={cn("w-8 h-8 rounded-lg bg-current/10 flex items-center justify-center shrink-0", color)}>
           <Icon className={cn("w-4 h-4", color)} />
