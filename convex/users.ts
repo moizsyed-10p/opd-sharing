@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 
+// convex/users.ts
 export const updateCurrentUser = mutation({
   args: {},
   handler: async (ctx) => {
@@ -12,9 +13,14 @@ export const updateCurrentUser = mutation({
       .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
 
+    // Derive best available name
+    const name = identity.name
+      ?? identity.email?.split("@")[0]
+      ?? "Member";
+
     if (existing) {
       await ctx.db.patch(existing._id, {
-        name: identity.name,
+        name,
         email: identity.email,
         avatarUrl: identity.profileUrl,
       });
@@ -23,7 +29,7 @@ export const updateCurrentUser = mutation({
 
     return await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,
-      name: identity.name,
+      name,
       email: identity.email,
       avatarUrl: identity.profileUrl,
     });

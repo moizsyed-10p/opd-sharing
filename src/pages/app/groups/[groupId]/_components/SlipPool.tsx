@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api.js";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
 import { toast } from "sonner";
@@ -17,7 +17,12 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu.tsx";
 import {
-  Download, FileText, CheckCircle, Banknote, MoreHorizontal, RotateCcw, Pencil, Check, X, Sparkles, Loader2, Users
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog.tsx";
+import { PDFDocument } from "pdf-lib";
+import {
+  Download, FileText, CheckCircle, MoreHorizontal, RotateCcw,
+  Pencil, Check, X, Sparkles, Loader2, Users, Target, AlertTriangle
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { formatDistanceToNow } from "date-fns";
@@ -49,34 +54,230 @@ type Slip = {
   effectiveAmount: number | undefined;
 };
 
+type SmartMatchState =
+  | { step: "input" }
+  | { step: "preview"; selectedSlips: Slip[]; total: number }
+  | { step: "claiming" }
+  | { step: "done"; total: number; count: number };
+
+// Greedy subset sum — finds combination >= target with minimum overage
+// function findBestMatch(slips: Slip[], target: number): Slip[] {
+//   const eligible = slips
+//     .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0)
+//     .sort((a, b) => (b.effectiveAmount ?? 0) - (a.effectiveAmount ?? 0));
+
+//   // Try all subsets up to a reasonable size to find best match
+//   // For performance, cap at 20 slips
+//   const pool = eligible.slice(0, 20);
+//   let bestSelection: Slip[] = [];
+//   let bestTotal = Infinity;
+
+//   // Dynamic programming approach for small sets
+//   const n = pool.length;
+//   for (let mask = 1; mask < (1 << n); mask++) {
+//     const selected: Slip[] = [];
+//     let sum = 0;
+//     for (let i = 0; i < n; i++) {
+//       if (mask & (1 << i)) {
+//         selected.push(pool[i]);
+//         sum += pool[i].effectiveAmount ?? 0;
+//       }
+//     }
+//     if (sum >= target && sum < bestTotal) {
+//       bestTotal = sum;
+//       bestSelection = selected;
+//     }
+//     // Early exit if exact match
+//     if (bestTotal === target) break;
+//   }
+
+//   // If no combination meets target, return all eligible slips
+//   if (bestSelection.length === 0) return eligible;
+
+//   return bestSelection;
+// }
+
+// function findBestMatch(slips: Slip[], target: number): Slip[] {
+//   const eligible = slips
+//     .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0)
+//     .sort((a, b) => (b.effectiveAmount ?? 0) - (a.effectiveAmount ?? 0));
+
+//   // Check if total pool can even reach target
+//   const poolTotal = eligible.reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
+//   if (poolTotal < target) {
+//     // Can't reach target — return all slips
+//     return eligible;
+//   }
+
+//   // Greedy: keep adding largest slips until we meet or exceed target
+//   const selected: Slip[] = [];
+//   let runningTotal = 0;
+
+//   for (const slip of eligible) {
+//     if (runningTotal >= target) break;
+//     selected.push(slip);
+//     runningTotal += slip.effectiveAmount ?? 0;
+//   }
+
+//   return selected;
+// }
+
+function findBestMatch(slips: Slip[], target: number): Slip[] {
+  const eligible = slips
+    .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0)
+    .sort((a, b) => (b.effectiveAmount ?? 0) - (a.effectiveAmount ?? 0));
+
+  const poolTotal = eligible.reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
+
+  // If pool can't reach target return everything
+  if (poolTotal <= target) return eligible;
+
+  const n = eligible.length;
+  let bestSelection: Slip[] = eligible; // fallback = all
+  let bestTotal = poolTotal;
+
+  // Use dynamic programming to find minimum sum >= target
+  // dp[i] = minimum sum >= target using first i slips
+  // Track which slips were selected using a bitmask only for small n
+  if (n <= 25) {
+    // Exact bitmask DP for small sets
+    for (let mask = 1; mask < (1 << n); mask++) {
+      let sum = 0;
+      const selected: Slip[] = [];
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) {
+          selected.push(eligible[i]);
+          sum += eligible[i].effectiveAmount ?? 0;
+        }
+      }
+      if (sum >= target && sum < bestTotal) {
+        bestTotal = sum;
+        bestSelection = selected;
+      }
+      if (bestTotal === target) break; // exact match, can't do better
+    }
+  } else {
+    // For larger sets use a DP table tracking minimum overage
+    // dp is a Set of achievable sums
+    const dp = new Map<number, number[]>(); // sum -> indices used
+    dp.set(0, []);
+
+    for (let i = 0; i < n; i++) {
+      const amount = eligible[i].effectiveAmount ?? 0;
+      const entries = Array.from(dp.entries());
+      for (const [sum, indices] of entries) {
+        const newSum = sum + amount;
+        if (!dp.has(newSum) || dp.get(newSum)!.length > indices.length + 1) {
+          dp.set(newSum, [...indices, i]);
+        }
+        if (newSum >= target && newSum < bestTotal) {
+          bestTotal = newSum;
+          bestSelection = dp.get(newSum)!.map((idx) => eligible[idx]);
+        }
+      }
+    }
+  }
+
+  return bestSelection;
+}
+
+async function mergePdfs(slips: Slip[]): Promise<Uint8Array> {
+  const merged = await PDFDocument.create();
+
+  for (const slip of slips) {
+    if (!slip.url) continue;
+    const response = await fetch(slip.url);
+    const bytes = await response.arrayBuffer();
+    const pdf = await PDFDocument.load(bytes);
+    const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+    pages.forEach((page) => merged.addPage(page));
+  }
+
+  return merged.save();
+}
+
 export default function SlipPool({ groupId, isAdmin }: Props) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [claimingId, setClaimingId] = useState<Id<"opdSlips"> | null>(null);
   const [editingAmountId, setEditingAmountId] = useState<Id<"opdSlips"> | null>(null);
   const [amountInput, setAmountInput] = useState("");
-  const [isMatching, setIsMatching] = useState(false);
+
+  // Smart Match state
+  const [smartMatchOpen, setSmartMatchOpen] = useState(false);
+  const [smartMatchState, setSmartMatchState] = useState<SmartMatchState>({ step: "input" });
+  const [targetAmount, setTargetAmount] = useState("");
 
   const slips = useQuery(api.slips.listGroupSlips, { groupId, filter });
+  const allSlips = useQuery(api.slips.listGroupSlips, { groupId, filter: "all" });
   const claimSlip = useMutation(api.slips.claimSlip);
   const unclaimSlip = useMutation(api.slips.unclaimSlip);
   const updateAmount = useMutation(api.slips.updateSlipAmount);
-  const runSmartMatch = useAction(api.amountMatchingAction.runSmartAmountMatching);
 
-  const handleSmartMatch = async () => {
-    setIsMatching(true);
+  const handleFindMatch = () => {
+    const target = parseFloat(targetAmount);
+    if (isNaN(target) || target <= 0) {
+      toast.error("Enter a valid target amount");
+      return;
+    }
+
+    const available = (allSlips ?? []).filter(
+      (s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0
+    );
+
+    if (available.length === 0) {
+      toast.error("No unclaimed slips with amounts available");
+      return;
+    }
+
+    const selected = findBestMatch(available, target);
+    const total = selected.reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
+
+    setSmartMatchState({ step: "preview", selectedSlips: selected, total });
+  };
+
+  const handleClaimAndDownload = async () => {
+    if (smartMatchState.step !== "preview") return;
+    const { selectedSlips, total } = smartMatchState;
+
+    setSmartMatchState({ step: "claiming" });
+
     try {
-      const result = await runSmartMatch({ groupId });
-      if (result.processed === 0) {
-        toast.info("All slips already have amounts set.");
-      } else {
-        toast.success(`Smart match complete`, {
-          description: `${result.matched} of ${result.processed} slips matched with amounts.`,
-        });
+      // Claim all selected slips and get their URLs
+      const claimedUrls: string[] = [];
+      for (const slip of selectedSlips) {
+        const { url } = await claimSlip({ slipId: slip._id });
+        if (url) claimedUrls.push(url);
       }
-    } catch {
-      toast.error("Smart amount matching failed");
-    } finally {
-      setIsMatching(false);
+
+      // Fetch fresh URLs for slips that may not have had URL
+      const slipsWithUrls = selectedSlips.map((s, i) => ({
+        ...s,
+        url: claimedUrls[i] ?? s.url,
+      }));
+
+      // Merge all PDFs
+      toast.info("Merging PDFs...");
+      const mergedBytes = await mergePdfs(slipsWithUrls);
+
+      // Auto download
+      const blob = new Blob([mergedBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `smart-match-₨${total.toLocaleString()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setSmartMatchState({ step: "done", total, count: selectedSlips.length });
+      toast.success(`Downloaded ${selectedSlips.length} slips totalling ₨${total.toLocaleString()}`);
+    } catch (err) {
+      const msg = err instanceof ConvexError
+        ? (err.data as { message: string }).message
+        : "Failed to claim slips";
+      toast.error(msg);
+      setSmartMatchState({ step: "preview", selectedSlips, total });
     }
   };
 
@@ -87,10 +288,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
       const { url } = await claimSlip({ slipId: slip._id });
       toast.success("Slip claimed!", {
         description: "Downloading now...",
-        action: url ? {
-          label: "Open",
-          onClick: () => window.open(url, "_blank"),
-        } : undefined,
+        action: url ? { label: "Open", onClick: () => window.open(url, "_blank") } : undefined,
       });
       if (url) {
         const a = document.createElement("a");
@@ -162,36 +360,182 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
 
   return (
     <div className="space-y-4">
+
+      {/* Smart Match Dialog */}
+      <Dialog open={smartMatchOpen} onOpenChange={(o) => {
+        setSmartMatchOpen(o);
+        if (!o) {
+          setSmartMatchState({ step: "input" });
+          setTargetAmount("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              Smart Match
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+
+            {/* INPUT */}
+            {smartMatchState.step === "input" && (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Enter your OPD reimbursement target. The app will find the best combination of unclaimed slips that meets or slightly exceeds your target.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">₨</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 45000"
+                      value={targetAmount}
+                      onChange={(e) => setTargetAmount(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleFindMatch()}
+                      className="flex-1"
+                      autoFocus
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Available pool: ₨{totalAmount.toLocaleString()} across {available} unclaimed slip{available !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setSmartMatchOpen(false)} className="cursor-pointer">
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleFindMatch} className="cursor-pointer flex-1 gap-1.5">
+                    <Target className="w-3.5 h-3.5" />
+                    Find Slips
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* PREVIEW */}
+            {smartMatchState.step === "preview" && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Selected slips</p>
+                    <Badge variant="secondary">
+                      ₨{smartMatchState.total.toLocaleString()}
+                    </Badge>
+                  </div>
+
+                  {parseFloat(targetAmount) > 0 && smartMatchState.total < parseFloat(targetAmount) && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <p className="text-xs text-amber-600">
+                        Best available combination (₨{smartMatchState.total.toLocaleString()}) is less than your target of ₨{parseFloat(targetAmount).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+
+                  {parseFloat(targetAmount) > 0 && smartMatchState.total > parseFloat(targetAmount) && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                      <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <p className="text-xs text-blue-600">
+                        ₨{(smartMatchState.total - parseFloat(targetAmount)).toLocaleString()} over target
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {smartMatchState.selectedSlips.map((slip) => (
+                      <div key={slip._id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/20">
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">
+                            {slip.fileName.replace(/\.pdf$/i, "")} — Page {slip.pageNumber}
+                          </p>
+                        </div>
+                        <span className="text-xs font-medium shrink-0">
+                          ₨{(slip.effectiveAmount ?? 0).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t">
+                    <span className="text-xs text-muted-foreground">{smartMatchState.selectedSlips.length} slip{smartMatchState.selectedSlips.length !== 1 ? "s" : ""}</span>
+                    <span className="text-sm font-semibold">₨{smartMatchState.total.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setSmartMatchState({ step: "input" })}
+                    className="cursor-pointer"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleClaimAndDownload}
+                    className="cursor-pointer flex-1 gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Claim & Download
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* CLAIMING */}
+            {smartMatchState.step === "claiming" && (
+              <div className="py-6 flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                <p className="text-sm font-medium">Claiming slips & merging PDFs...</p>
+                <p className="text-xs text-muted-foreground">This may take a moment</p>
+              </div>
+            )}
+
+            {/* DONE */}
+            {smartMatchState.step === "done" && (
+              <div className="py-4 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto">
+                  <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-sm">Done!</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {smartMatchState.count} slip{smartMatchState.count !== 1 ? "s" : ""} claimed & downloaded
+                  </p>
+                  <p className="text-sm font-semibold mt-1">₨{smartMatchState.total.toLocaleString()}</p>
+                </div>
+                <Button size="sm" onClick={() => setSmartMatchOpen(false)} className="cursor-pointer w-full">
+                  Close
+                </Button>
+              </div>
+            )}
+
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header row */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">Slip Pool</h3>
-        {slips.length > 0 && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="cursor-pointer h-7 text-xs gap-1.5"
-                  onClick={handleSmartMatch}
-                  disabled={isMatching}
-                >
-                  {isMatching
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Sparkles className="w-3.5 h-3.5" />
-                  }
-                  {isMatching ? "Matching..." : "Smart Match"}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left">
-                <p className="text-xs">Auto-extract OPD amounts from slip PDFs</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+        {available > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="cursor-pointer h-7 text-xs gap-1.5"
+            onClick={() => setSmartMatchOpen(true)}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Smart Match
+          </Button>
         )}
       </div>
 
-      {/* Stats bar — per user perspective */}
+      {/* Stats bar */}
       {slips.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-muted/40 border rounded-lg p-3 text-center">
@@ -281,7 +625,6 @@ function SlipRow({
         ? "bg-muted/20 border-border/50 opacity-70"
         : "bg-card hover:bg-muted/20 border-border"
     )}>
-      {/* Status icon */}
       <div className={cn(
         "w-8 h-8 rounded-md flex items-center justify-center shrink-0",
         slip.isClaimedByMe ? "bg-muted" : "bg-primary/10"
@@ -292,7 +635,6 @@ function SlipRow({
         }
       </div>
 
-      {/* Slip info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium">
@@ -308,7 +650,6 @@ function SlipRow({
           )}
         </div>
         <div className="flex items-center gap-3 mt-0.5">
-          {/* Amount */}
           {isEditingAmount ? (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">₨</span>
@@ -346,7 +687,6 @@ function SlipRow({
             </button>
           )}
 
-          {/* Claimed by count — visible to admin */}
           {isAdmin && slip.claimedByCount > 0 && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Users className="w-3 h-3" />
@@ -356,9 +696,7 @@ function SlipRow({
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* View button */}
         {slip.url && (
           <Button
             size="sm"
@@ -371,7 +709,6 @@ function SlipRow({
           </Button>
         )}
 
-        {/* Claim button — only if not claimed by me */}
         {!slip.isClaimedByMe && (
           <TooltipProvider>
             <Tooltip>
@@ -393,7 +730,6 @@ function SlipRow({
           </TooltipProvider>
         )}
 
-        {/* Re-download if already claimed by me */}
         {slip.isClaimedByMe && slip.url && (
           <Button
             size="sm"
@@ -406,7 +742,6 @@ function SlipRow({
           </Button>
         )}
 
-        {/* Admin unclaim dropdown */}
         {isAdmin && slip.isClaimedByMe && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
