@@ -170,30 +170,34 @@ export default function GroupDetailPage() {
           Copy
         </Button>
       </div>
-
+      
       {/* Tabs */}
       <Tabs defaultValue="dashboard">
-        <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-          <TabsList className="h-8">
-            <TabsTrigger value="dashboard" className="cursor-pointer text-xs gap-1.5 h-6">
-              <BarChart2 className="w-3.5 h-3.5" />
-              Dashboard
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <TabsList className="h-8 overflow-x-auto flex-1 justify-start">
+            <TabsTrigger value="dashboard" className="cursor-pointer text-xs gap-1 h-6 px-2 shrink-0">
+              <BarChart2 className="w-3 h-3" />
+              <span className="hidden sm:inline">Dashboard</span>
+              <span className="sm:hidden">Dash</span>
             </TabsTrigger>
-            <TabsTrigger value="pool" className="cursor-pointer text-xs gap-1.5 h-6">
-              <Layers className="w-3.5 h-3.5" />
-              Slip Pool
+            <TabsTrigger value="pool" className="cursor-pointer text-xs gap-1 h-6 px-2 shrink-0">
+              <Layers className="w-3 h-3" />
+              <span className="hidden sm:inline">Slip Pool</span>
+              <span className="sm:hidden">Pool</span>
             </TabsTrigger>
-            <TabsTrigger value="my-claims" className="cursor-pointer text-xs gap-1.5 h-6">
-              <BookmarkCheck className="w-3.5 h-3.5" />
-              My Claims
+            <TabsTrigger value="my-claims" className="cursor-pointer text-xs gap-1 h-6 px-2 shrink-0">
+              <BookmarkCheck className="w-3 h-3" />
+              <span className="hidden sm:inline">My Claims</span>
+              <span className="sm:hidden">Claims</span>
             </TabsTrigger>
-            <TabsTrigger value="files" className="cursor-pointer text-xs gap-1.5 h-6">
-              <FileText className="w-3.5 h-3.5" />
+            <TabsTrigger value="files" className="cursor-pointer text-xs gap-1 h-6 px-2 shrink-0">
+              <FileText className="w-3 h-3" />
               Files
             </TabsTrigger>
           </TabsList>
           <PdfUploader groupId={gId} />
         </div>
+  
 
         <TabsContent value="dashboard">
           <Dashboard groupId={gId} />

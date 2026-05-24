@@ -177,13 +177,13 @@ export default function Dashboard({ groupId }: Props) {
             ) : (
               data.slipsByFile.map((f) => {
                 const pct = f.total > 0 ? Math.round((f.claimedByMe / f.total) * 100) : 0;
-                const shortName = f.fileName.replace(/\.pdf$/i, "").slice(0, 40);
+                const shortName = f.fileName.replace(/\.pdf$/i, "").slice(0, 20);
                 return (
                   <div key={f.fileId} className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
-                        <span className="text-xs font-medium truncate">{shortName}</span>
+                        <span className="text-xs font-medium truncate  max-w-[140px] block">{shortName}</span>
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">
                         {f.claimedByMe}/{f.total}
@@ -228,7 +228,11 @@ export default function Dashboard({ groupId }: Props) {
                     <p className="text-sm">
                       <span className="font-medium">{a.userName}</span>
                       <span className="text-muted-foreground"> claimed page {a.pageNumber}</span>
-                      <span className="text-muted-foreground"> from <span className="text-foreground/70">{a.fileName.replace(/\.pdf$/i, "")}</span></span>
+                      <span className="text-muted-foreground"> from 
+                        <span className="text-foreground/70 truncate max-w-[120px] inline-block align-bottom">
+                          {a.fileName.replace(/\.pdf$/i, "").slice(0, 20)}
+                        </span>
+                      </span>
                     </p>
                   </div>
                   <div className="text-right shrink-0">

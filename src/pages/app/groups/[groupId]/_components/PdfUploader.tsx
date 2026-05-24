@@ -163,7 +163,11 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
       setUploadState({ status: "converting", fileName: file.name });
       try {
         uploadFile = await convertImageToPdf(file);
-        fileName = file.name.replace(/\.[^/.]+$/, "") + ".pdf";
+        // fileName = file.name.replace(/\.[^/.]+$/, "") + ".pdf";
+        const baseName = file.name.match(/^[0-9a-f-]{36}$/i)
+          ? `receipt-${new Date().toLocaleDateString("en-PK").replace(/\//g, "-")}`
+          : file.name.replace(/\.[^/.]+$/, "");
+        fileName = baseName + ".pdf";
       } catch {
         setUploadState({ status: "error", message: "Failed to convert image to PDF" });
         return;
