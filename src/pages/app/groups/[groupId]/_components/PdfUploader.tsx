@@ -64,9 +64,47 @@ type Props = {
 
 const IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
+async function compressImage(blob: Blob, mimeType: string): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = document.createElement("img");
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      const MAX = 1800;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) {
+          height = Math.round((height * MAX) / width);
+          width = MAX;
+        } else {
+          width = Math.round((width * MAX) / height);
+          height = MAX;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (compressed) => resolve(compressed ?? blob),
+        "image/jpeg",
+        0.80
+      );
+    };
+    img.src = url;
+  });
+}
+
 async function convertImageToPdf(blob: Blob, mimeType: string): Promise<Blob> {
+  const compressed = await compressImage(blob, mimeType);
   const pdfDoc = await PDFDocument.create();
   const imageBytes = await blob.arrayBuffer();
+  // Always JPEG after compression
+  // const pdfImage = await pdfDoc.embedJpg(imageBytes);
   const pdfImage = mimeType === "image/png"
     ? await pdfDoc.embedPng(imageBytes)
     : await pdfDoc.embedJpg(imageBytes);

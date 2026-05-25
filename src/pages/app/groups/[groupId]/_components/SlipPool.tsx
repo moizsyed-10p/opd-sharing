@@ -135,6 +135,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
   const [smartMatchOpen, setSmartMatchOpen] = useState(false);
   const [smartMatchState, setSmartMatchState] = useState<SmartMatchState>({ step: "input" });
   const [targetAmount, setTargetAmount] = useState("");
+  const [isFinding, setIsFinding] = useState(false);
 
   // Bulk select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -228,21 +229,27 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
     }
   };
 
-  const handleFindMatch = () => {
+  const handleFindMatch = async () => {
     const target = parseFloat(targetAmount);
     if (isNaN(target) || target <= 0) {
       toast.error("Enter a valid target amount");
       return;
     }
+
+    setIsFinding(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     const available = (allSlips ?? []).filter(
       (s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0
     );
     if (available.length === 0) {
       toast.error("No unclaimed slips with amounts available");
+      setIsFinding(false);
       return;
     }
     const selected = findBestMatch(available, target);
     const total = selected.reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
+    setIsFinding(false);
     setSmartMatchState({ step: "preview", selectedSlips: selected, total });
   };
 
@@ -395,9 +402,12 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" size="sm" onClick={() => setSmartMatchOpen(false)} className="cursor-pointer">Cancel</Button>
-                  <Button size="sm" onClick={handleFindMatch} className="cursor-pointer flex-1 gap-1.5">
-                    <Target className="w-3.5 h-3.5" />
-                    Find Slips
+                  <Button size="sm" onClick={handleFindMatch} disabled={isFinding} className="cursor-pointer flex-1 gap-1.5">
+                      {isFinding
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Target className="w-3.5 h-3.5" />
+                    }
+                    {isFinding ? "Finding best match..." : "Find Slips"}
                   </Button>
                 </div>
               </>
