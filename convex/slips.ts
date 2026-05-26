@@ -307,9 +307,24 @@ export const saveExtractedAmounts = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError({ message: "Not authenticated", code: "UNAUTHENTICATED" });
 
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+
+    if (!user) throw new ConvexError({ message: "User not found", code: "NOT_FOUND" });
+
     for (const { slipId, amount } of args.amounts) {
       const slip = await ctx.db.get(slipId);
       if (!slip) continue;
+      
+      const membership = await ctx.db
+        .query("groupMembers")
+        .withIndex("by_group_and_user", (q) =>
+          q.eq("groupId", slip.groupId).eq("userId", user._id)
+        )
+        .unique();
+      if (!membership) continue; // skip slips user doesn't belong to
       if (slip.amountOverride === undefined && slip.amount === undefined) {
         await ctx.db.patch(slipId, { amount });
       }

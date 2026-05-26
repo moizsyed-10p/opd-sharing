@@ -104,10 +104,7 @@ async function convertImageToPdf(blob: Blob, mimeType: string): Promise<Blob> {
   const pdfDoc = await PDFDocument.create();
   const imageBytes = await blob.arrayBuffer();
   // Always JPEG after compression
-  // const pdfImage = await pdfDoc.embedJpg(imageBytes);
-  const pdfImage = mimeType === "image/png"
-    ? await pdfDoc.embedPng(imageBytes)
-    : await pdfDoc.embedJpg(imageBytes);
+  const pdfImage = await pdfDoc.embedJpg(imageBytes);
   const page = pdfDoc.addPage([pdfImage.width, pdfImage.height]);
   page.drawImage(pdfImage, { x: 0, y: 0, width: pdfImage.width, height: pdfImage.height });
   const pdfBytes = await pdfDoc.save();
@@ -369,11 +366,22 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
 
     setUploadState({ status: "review", files: reviewFiles });
   }, []);
-
+  
+  const MAX_FILES = 20;
   // ─── Main drop handler ───────────────────────────────────────
   const onDrop = useCallback((accepted: File[]) => {
-    if (accepted.length === 0) return;
-
+    
+    if (accepted.length > MAX_FILES) {
+        toast.error(`Maximum ${MAX_FILES} files at once`);
+        accepted = accepted.slice(0, MAX_FILES);
+    }
+    const oversized = accepted.filter((f) => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      toast.error(`${oversized.length} file${oversized.length !== 1 ? "s" : ""} exceed 50MB limit and will be skipped`);
+    }
+    const valid = accepted.filter((f) => f.size <= 50 * 1024 * 1024);
+    if (valid.length === 0) return;
+  
     const images = accepted.filter((f) => IMAGE_TYPES.includes(f.type) || f.type.startsWith("image/"));
     const pdfs = accepted.filter((f) => f.name.toLowerCase().endsWith(".pdf") || f.type === "application/pdf");
 
@@ -401,8 +409,6 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
         skipped: false,
       }));
       setUploadState({ status: "crop", items, currentIndex: 0 });
-      // PDFs will be handled after crop flow completes — for simplicity, only handle images first
-      // TODO: queue PDFs after images if mixed
     }
   }, [processPdfFiles]);
 
@@ -593,6 +599,7 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
       "image/webp": [".webp"],
     },
     multiple: true,
+    maxFiles: MAX_FILES,
     disabled: uploadState.status !== "idle",
   });
 
@@ -601,7 +608,16 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
   const isProcessing = ["uploading", "splitting", "converting", "extracting", "ocr"].includes(uploadState.status);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
+    <Dialog open={open} onOpenChange={(o) => { 
+      setOpen(o); 
+      if (!o) {
+        // Cleanup any pending object URLs
+        if (uploadState.status === "crop") {
+          uploadState.items.forEach((item) => URL.revokeObjectURL(item.objectUrl));
+        }
+        reset();
+      }
+      }}>
       <DialogTrigger asChild>
         <Button size="sm" className="cursor-pointer">
           <Upload className="w-4 h-4 mr-2" />
