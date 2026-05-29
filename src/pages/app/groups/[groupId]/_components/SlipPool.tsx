@@ -61,6 +61,7 @@ type SmartMatchState =
   | { step: "done"; total: number; count: number };
 
 function findBestMatch(slips: Slip[], target: number): Slip[] {
+  // Sort largest → smallest so greedy picks the fewest possible slips up front.
   const eligible = slips
     .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0)
     .sort((a, b) => (b.effectiveAmount ?? 0) - (a.effectiveAmount ?? 0));
@@ -69,45 +70,62 @@ function findBestMatch(slips: Slip[], target: number): Slip[] {
   if (poolTotal <= target) return eligible;
 
   const n = eligible.length;
-  let bestSelection: Slip[] = eligible;
-  let bestTotal = poolTotal;
+  const amounts = eligible.map((s) => s.effectiveAmount ?? 0);
 
-  if (n <= 25) {
-    for (let mask = 1; mask < (1 << n); mask++) {
-      let sum = 0;
-      const selected: Slip[] = [];
-      for (let i = 0; i < n; i++) {
-        if (mask & (1 << i)) {
-          selected.push(eligible[i]);
-          sum += eligible[i].effectiveAmount ?? 0;
-        }
+  // ── Step 1: Greedy pass ─────────────────────────────────────────────────────
+  // Take the largest slips one-by-one until we reach the target.
+  // O(n) — guaranteed to find a valid selection without any exponential blow-up.
+  const inSelection = new Array<boolean>(n).fill(false);
+  let currentSum = 0;
+  for (let i = 0; i < n; i++) {
+    inSelection[i] = true;
+    currentSum += amounts[i];
+    if (currentSum >= target) break;
+  }
+
+  // ── Step 2: Local-search refinement ────────────────────────────────────────
+  // Iteratively try two kinds of moves until no further improvement is found:
+  //   a) Remove – drop a selected slip if the remaining sum still covers target.
+  //   b) Swap   – replace a selected slip with a smaller unselected one when
+  //               the resulting sum is still ≥ target (reduces the total).
+  // O(n²) per pass, converges in very few passes → safe for n = 70+.
+  let improved = true;
+  while (improved) {
+    improved = false;
+
+    // a) Remove: try dropping each selected slip, smallest first (highest index
+    //    because we sorted descending), so we shed excess in the cheapest way.
+    for (let i = n - 1; i >= 0; i--) {
+      if (!inSelection[i]) continue;
+      if (currentSum - amounts[i] >= target) {
+        inSelection[i] = false;
+        currentSum -= amounts[i];
+        improved = true;
+        // Keep scanning — might be able to remove more than one.
       }
-      if (sum >= target && sum < bestTotal) {
-        bestTotal = sum;
-        bestSelection = selected;
-      }
-      if (bestTotal === target) break;
     }
-  } else {
-    const dp = new Map<number, number[]>();
-    dp.set(0, []);
-    for (let i = 0; i < n; i++) {
-      const amount = eligible[i].effectiveAmount ?? 0;
-      const entries = Array.from(dp.entries());
-      for (const [sum, indices] of entries) {
-        const newSum = sum + amount;
-        if (!dp.has(newSum) || dp.get(newSum)!.length > indices.length + 1) {
-          dp.set(newSum, [...indices, i]);
-        }
-        if (newSum >= target && newSum < bestTotal) {
-          bestTotal = newSum;
-          bestSelection = dp.get(newSum)!.map((idx) => eligible[idx]);
+
+    // b) Swap: replace the largest selected slip that can be exchanged for a
+    //    cheaper unselected one while keeping the sum ≥ target.
+    outer: for (let i = 0; i < n; i++) {
+      if (!inSelection[i]) continue;
+      // Minimum amount the replacement must provide to keep sum ≥ target.
+      const minReplacement = target - (currentSum - amounts[i]);
+      // Scan from the smallest unselected slip upward to find the tightest fit.
+      for (let j = n - 1; j >= 0; j--) {
+        if (inSelection[j] || j === i) continue;
+        if (amounts[j] < amounts[i] && amounts[j] >= minReplacement) {
+          inSelection[i] = false;
+          inSelection[j] = true;
+          currentSum = currentSum - amounts[i] + amounts[j];
+          improved = true;
+          break outer;
         }
       }
     }
   }
 
-  return bestSelection;
+  return eligible.filter((_, i) => inSelection[i]);
 }
 
 async function mergePdfs(slips: Slip[]): Promise<Uint8Array> {
