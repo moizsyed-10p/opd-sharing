@@ -18,6 +18,7 @@ import { FileText, Trash2, ChevronDown, Loader2, CheckCircle, AlertCircle, Clock
 import { cn } from "@/lib/utils.ts";
 import SlipPreviewList from "./SlipPreviewList.tsx";
 import { useState } from "react";
+import { groupByMonth } from "@/lib/groupByMonth.ts";
 
 type Props = {
   groupId: Id<"groups">;
@@ -68,14 +69,20 @@ export default function FileList({ groupId, isAdmin }: Props) {
     );
   }
 
-  return (
-    <div className="space-y-2">
-      {files.map((file) => {
-        const { label, icon: Icon, className } = statusConfig[file.status];
-        const isExpanded = expandedFileId === file._id;
+  const monthGroups = groupByMonth(files, (f) => f._creationTime);
 
-        return (
-          <Collapsible
+  return (
+    <div className="space-y-5">
+      {monthGroups.map((group) => (
+        <div key={group.key} className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground">{group.label}</p>
+          <div className="space-y-2">
+            {group.items.map((file) => {
+              const { label, icon: Icon, className } = statusConfig[file.status];
+              const isExpanded = expandedFileId === file._id;
+
+              return (
+                <Collapsible
             key={file._id}
             open={isExpanded}
             onOpenChange={(open) => setExpandedFileId(open ? file._id : null)}
@@ -150,8 +157,11 @@ export default function FileList({ groupId, isAdmin }: Props) {
               </CollapsibleContent>
             </div>
           </Collapsible>
-        );
-      })}
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

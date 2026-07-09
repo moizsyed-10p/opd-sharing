@@ -21,6 +21,16 @@ export const groupDashboard = query({
       claimedCount: number;
       claimedValue: number;
     }>;
+    uploadStats: Array<{
+      userId: Id<"users">;
+      name: string;
+      email: string | undefined;
+      avatarUrl: string | undefined;
+      role: "admin" | "member";
+      fileCount: number;
+      slipCount: number;
+      uploadedValue: number;
+    }>;
     recentActivity: Array<{
       slipId: Id<"opdSlips">;
       userName: string;
@@ -128,6 +138,36 @@ export const groupDashboard = query({
       })
     );
 
+    // Per-member upload stats (how much each person uploaded to the pool)
+    const files = await ctx.db
+      .query("opdFiles")
+      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+      .collect();
+
+    const uploadStats = await Promise.all(
+      allMembers.map(async (m) => {
+        const memberUser = await ctx.db.get(m.userId);
+        const memberFiles = files.filter((f) => f.uploadedBy === m.userId);
+        const memberFileIds = new Set(memberFiles.map((f) => f._id));
+        const memberSlips = slips.filter((s) => memberFileIds.has(s.fileId));
+        const uploadedValue = memberSlips.reduce(
+          (sum, s) => sum + (s.amountOverride ?? s.amount ?? 0),
+          0
+        );
+
+        return {
+          userId: m.userId,
+          name: memberUser?.name ?? memberUser?.email?.split("@")[0] ?? "Member",
+          email: memberUser?.email,
+          avatarUrl: memberUser?.avatarUrl,
+          role: m.role,
+          fileCount: memberFiles.length,
+          slipCount: memberSlips.length,
+          uploadedValue,
+        };
+      })
+    );
+
     // Recent activity
     const sorted = [...allUsages].sort(
       (a, b) => new Date(b.claimedAt).getTime() - new Date(a.claimedAt).getTime()
@@ -160,11 +200,6 @@ export const groupDashboard = query({
     }>;
 
     // Slips breakdown by file — per user perspective
-    const files = await ctx.db
-      .query("opdFiles")
-      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
-      .collect();
-
     const slipsByFile = files.map((f) => {
       const fileSlips = slips.filter((s) => s.fileId === f._id);
       const claimedByMe = fileSlips.filter((s) => myClaimedSlipIds.has(s._id)).length;
@@ -190,8 +225,99 @@ export const groupDashboard = query({
       claimedValue,
       availableValue,
       memberStats,
+      uploadStats,
       recentActivity,
       slipsByFile,
     };
+  },
+});
+
+// Detailed claim/upload history for a single member, grouped-ready (raw timestamps included)
+export const memberDetail = query({
+  args: { groupId: v.id("groups"), userId: v.id("users") },
+  handler: async (ctx, args): Promise<{
+    claims: Array<{
+      slipId: Id<"opdSlips">;
+      fileName: string;
+      pageNumber: number;
+      effectiveAmount: number | undefined;
+      claimedAt: string;
+    }>;
+    uploads: Array<{
+      fileId: Id<"opdFiles">;
+      fileName: string;
+      createdAt: number;
+      slipCount: number;
+      uploadedValue: number;
+    }>;
+  } | null> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (!user) return null;
+    const membership = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q) => q.eq("groupId", args.groupId).eq("userId", user._id))
+      .unique();
+    if (!membership) return null;
+
+    const usages = await ctx.db
+      .query("userOpdUsage")
+      .withIndex("by_group_and_user", (q) => q.eq("groupId", args.groupId).eq("userId", args.userId))
+      .collect();
+
+    const claims = (
+      await Promise.all(
+        usages.map(async (u) => {
+          const slip = await ctx.db.get(u.slipId);
+          if (!slip) return null;
+          const file = await ctx.db.get(slip.fileId);
+          return {
+            slipId: u.slipId,
+            fileName: file?.originalName ?? "Unknown file",
+            pageNumber: slip.pageNumber,
+            effectiveAmount: slip.amountOverride ?? slip.amount,
+            claimedAt: u.claimedAt,
+          };
+        })
+      )
+    ).filter(Boolean) as Array<{
+      slipId: Id<"opdSlips">;
+      fileName: string;
+      pageNumber: number;
+      effectiveAmount: number | undefined;
+      claimedAt: string;
+    }>;
+
+    const files = await ctx.db
+      .query("opdFiles")
+      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+      .collect();
+    const memberFiles = files.filter((f) => f.uploadedBy === args.userId);
+
+    const uploads = await Promise.all(
+      memberFiles.map(async (f) => {
+        const slips = await ctx.db
+          .query("opdSlips")
+          .withIndex("by_file", (q) => q.eq("fileId", f._id))
+          .collect();
+        const uploadedValue = slips.reduce(
+          (sum, s) => sum + (s.amountOverride ?? s.amount ?? 0),
+          0
+        );
+        return {
+          fileId: f._id,
+          fileName: f.originalName,
+          createdAt: f._creationTime,
+          slipCount: slips.length,
+          uploadedValue,
+        };
+      })
+    );
+
+    return { claims, uploads };
   },
 });

@@ -26,6 +26,7 @@ import {
   Pencil, Check, X, Sparkles, Loader2, Users, Target, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { groupByMonth } from "@/lib/groupByMonth.ts";
 
 type FilterType = "all" | "available" | "claimed";
 
@@ -566,24 +567,31 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="space-y-2 pb-20">
-          {slips.map((slip) => (
-            <SlipRow
-              key={slip._id}
-              slip={slip}
-              isAdmin={isAdmin}
-              isSelected={selectedIds.has(slip._id)}
-              isClaiming={claimingId === slip._id}
-              isEditingAmount={editingAmountId === slip._id}
-              amountInput={amountInput}
-              onToggleSelect={() => toggleSelect(slip._id)}
-              onClaim={() => handleClaim(slip)}
-              onUnclaim={() => handleUnclaim(slip._id)}
-              onStartEdit={() => startEditAmount(slip)}
-              onSaveAmount={() => saveAmount(slip._id)}
-              onCancelEdit={cancelEdit}
-              onAmountInputChange={setAmountInput}
-            />
+        <div className="space-y-5 pb-20">
+          {groupByMonth(slips, (s) => s._creationTime).map((group) => (
+            <div key={group.key} className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">{group.label}</p>
+              <div className="space-y-2">
+                {group.items.map((slip) => (
+                  <SlipRow
+                    key={slip._id}
+                    slip={slip}
+                    isAdmin={isAdmin}
+                    isSelected={selectedIds.has(slip._id)}
+                    isClaiming={claimingId === slip._id}
+                    isEditingAmount={editingAmountId === slip._id}
+                    amountInput={amountInput}
+                    onToggleSelect={() => toggleSelect(slip._id)}
+                    onClaim={() => handleClaim(slip)}
+                    onUnclaim={() => handleUnclaim(slip._id)}
+                    onStartEdit={() => startEditAmount(slip)}
+                    onSaveAmount={() => saveAmount(slip._id)}
+                    onCancelEdit={cancelEdit}
+                    onAmountInputChange={setAmountInput}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

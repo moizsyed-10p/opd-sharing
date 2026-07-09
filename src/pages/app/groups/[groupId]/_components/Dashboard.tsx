@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api.js";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
@@ -13,6 +14,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartTooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import { cn } from "@/lib/utils.ts";
+import MemberDetailDialog from "./MemberDetailDialog.tsx";
 
 type Props = { groupId: Id<"groups"> };
 
@@ -26,6 +28,9 @@ const COLORS = [
 
 export default function Dashboard({ groupId }: Props) {
   const data = useQuery(api.dashboard.groupDashboard, { groupId });
+  const [selectedMember, setSelectedMember] = useState<
+    { userId: Id<"users">; name: string; tab: "claims" | "uploads" } | null
+  >(null);
 
   if (data === undefined) {
     return (
@@ -121,7 +126,12 @@ export default function Dashboard({ groupId }: Props) {
                   {[...data.memberStats]
                     .sort((a, b) => b.claimedCount - a.claimedCount)
                     .map((m, i) => (
-                      <div key={m.userId} className="flex items-center gap-3">
+                      <button
+                        key={m.userId}
+                        type="button"
+                        onClick={() => setSelectedMember({ userId: m.userId, name: m.name ?? "Member", tab: "claims" })}
+                        className="flex items-center gap-3 w-full text-left cursor-pointer rounded-md hover:bg-muted/40 transition-colors -mx-1 px-1 py-0.5"
+                      >
                         <Avatar className="w-7 h-7 shrink-0">
                           <AvatarImage src={m.avatarUrl} />
                           <AvatarFallback
@@ -158,10 +168,73 @@ export default function Dashboard({ groupId }: Props) {
                             </span>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                 </div>
               </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Upload breakdown */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Uploads by Member</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.uploadStats.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No uploads yet</p>
+            ) : (
+              <div className="space-y-2">
+                {[...data.uploadStats]
+                  .sort((a, b) => b.uploadedValue - a.uploadedValue)
+                  .map((m, i) => {
+                    const maxValue = Math.max(...data.uploadStats.map((u) => u.uploadedValue), 1);
+                    return (
+                      <button
+                        key={m.userId}
+                        type="button"
+                        onClick={() => setSelectedMember({ userId: m.userId, name: m.name ?? "Member", tab: "uploads" })}
+                        className="flex items-center gap-3 w-full text-left cursor-pointer rounded-md hover:bg-muted/40 transition-colors -mx-1 px-1 py-0.5"
+                      >
+                        <Avatar className="w-7 h-7 shrink-0">
+                          <AvatarImage src={m.avatarUrl} />
+                          <AvatarFallback
+                            className="text-[10px] font-medium"
+                            style={{ background: COLORS[i % COLORS.length] + "22", color: COLORS[i % COLORS.length] }}
+                          >
+                            {(m.name ?? "?").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium truncate">{m.name ?? "Member"}</span>
+                            {m.role === "admin" && (
+                              <Badge variant="secondary" className="text-[9px] h-3.5 px-1">Admin</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${(m.uploadedValue / maxValue) * 100}%`,
+                                  background: COLORS[i % COLORS.length],
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {m.fileCount === 0
+                                ? "No uploads yet"
+                                : `${m.fileCount} file${m.fileCount !== 1 ? "s" : ""} · ${m.slipCount} slip${m.slipCount !== 1 ? "s" : ""}${m.uploadedValue > 0 ? ` · ₨${m.uploadedValue.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ""}`
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -249,6 +322,14 @@ export default function Dashboard({ groupId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <MemberDetailDialog
+        groupId={groupId}
+        userId={selectedMember?.userId ?? null}
+        memberName={selectedMember?.name ?? ""}
+        initialTab={selectedMember?.tab}
+        onClose={() => setSelectedMember(null)}
+      />
     </div>
   );
 }
