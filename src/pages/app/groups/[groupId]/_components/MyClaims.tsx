@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api.js";
 import type { Id } from "@/convex/_generated/dataModel.d.ts";
@@ -5,13 +6,20 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty.tsx";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select.tsx";
 import { Download, FileText, Banknote } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { groupByMonth } from "@/lib/groupByMonth.ts";
 
 type Props = { groupId: Id<"groups"> };
 
+const ALL_MONTHS = "all";
+
 export default function MyClaims({ groupId }: Props) {
   const claims = useQuery(api.slips.myClaimedSlips, { groupId });
+  const [selectedMonth, setSelectedMonth] = useState<string>(ALL_MONTHS);
 
   if (claims === undefined) {
     return (
@@ -20,8 +28,6 @@ export default function MyClaims({ groupId }: Props) {
       </div>
     );
   }
-
-  const totalValue = claims.reduce((sum, c) => sum + (c.effectiveAmount ?? 0), 0);
 
   if (claims.length === 0) {
     return (
@@ -35,13 +41,36 @@ export default function MyClaims({ groupId }: Props) {
     );
   }
 
+  const monthGroups = groupByMonth(claims, (c) => c.usedAt ?? 0);
+  const visibleClaims = selectedMonth === ALL_MONTHS
+    ? claims
+    : monthGroups.find((g) => g.key === selectedMonth)?.items ?? [];
+  const totalValue = visibleClaims.reduce((sum, c) => sum + (c.effectiveAmount ?? 0), 0);
+
   return (
     <div className="space-y-4">
+      {/* Month filter */}
+      <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+        <SelectTrigger className="w-full sm:w-56 cursor-pointer">
+          <SelectValue placeholder="All months" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_MONTHS} className="cursor-pointer">All months</SelectItem>
+          {monthGroups.map((g) => (
+            <SelectItem key={g.key} value={g.key} className="cursor-pointer">
+              {g.label} ({g.items.length})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       {/* Summary */}
       <div className="flex items-center gap-4 p-4 bg-muted/40 border rounded-lg">
         <div className="flex-1">
-          <p className="text-xs text-muted-foreground">Your claimed slips</p>
-          <p className="text-2xl font-bold">{claims.length}</p>
+          <p className="text-xs text-muted-foreground">
+            {selectedMonth === ALL_MONTHS ? "Your claimed slips" : "Claimed this month"}
+          </p>
+          <p className="text-2xl font-bold">{visibleClaims.length}</p>
         </div>
         {totalValue > 0 && (
           <div className="text-right">
@@ -52,8 +81,17 @@ export default function MyClaims({ groupId }: Props) {
       </div>
 
       {/* Claims list */}
+      {visibleClaims.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FileText /></EmptyMedia>
+            <EmptyTitle>No claims in this month</EmptyTitle>
+            <EmptyDescription>Try a different month, or select "All months"</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
       <div className="space-y-2">
-        {[...claims]
+        {[...visibleClaims]
           .sort((a, b) =>
             new Date(b.usedAt ?? 0).getTime() - new Date(a.usedAt ?? 0).getTime()
           )
@@ -99,6 +137,7 @@ export default function MyClaims({ groupId }: Props) {
             </div>
           ))}
       </div>
+      )}
     </div>
   );
 }
