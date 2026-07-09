@@ -62,10 +62,10 @@ type SmartMatchState =
   | { step: "done"; total: number; count: number };
 
 function findBestMatch(slips: Slip[], target: number): Slip[] {
-  // Sort largest → smallest so greedy picks the fewest possible slips up front.
+  // Sort oldest → newest so the match always draws from the oldest slips first.
   const eligible = slips
     .filter((s) => !s.isClaimedByMe && s.effectiveAmount !== undefined && s.effectiveAmount > 0)
-    .sort((a, b) => (b.effectiveAmount ?? 0) - (a.effectiveAmount ?? 0));
+    .sort((a, b) => a._creationTime - b._creationTime);
 
   const poolTotal = eligible.reduce((sum, s) => sum + (s.effectiveAmount ?? 0), 0);
   if (poolTotal <= target) return eligible;
@@ -74,7 +74,7 @@ function findBestMatch(slips: Slip[], target: number): Slip[] {
   const amounts = eligible.map((s) => s.effectiveAmount ?? 0);
 
   // ── Step 1: Greedy pass ─────────────────────────────────────────────────────
-  // Take the largest slips one-by-one until we reach the target.
+  // Take the oldest slips one-by-one until we reach the target.
   // O(n) — guaranteed to find a valid selection without any exponential blow-up.
   const inSelection = new Array<boolean>(n).fill(false);
   let currentSum = 0;
@@ -84,45 +84,15 @@ function findBestMatch(slips: Slip[], target: number): Slip[] {
     if (currentSum >= target) break;
   }
 
-  // ── Step 2: Local-search refinement ────────────────────────────────────────
-  // Iteratively try two kinds of moves until no further improvement is found:
-  //   a) Remove – drop a selected slip if the remaining sum still covers target.
-  //   b) Swap   – replace a selected slip with a smaller unselected one when
-  //               the resulting sum is still ≥ target (reduces the total).
-  // O(n²) per pass, converges in very few passes → safe for n = 70+.
-  let improved = true;
-  while (improved) {
-    improved = false;
-
-    // a) Remove: try dropping each selected slip, smallest first (highest index
-    //    because we sorted descending), so we shed excess in the cheapest way.
-    for (let i = n - 1; i >= 0; i--) {
-      if (!inSelection[i]) continue;
-      if (currentSum - amounts[i] >= target) {
-        inSelection[i] = false;
-        currentSum -= amounts[i];
-        improved = true;
-        // Keep scanning — might be able to remove more than one.
-      }
-    }
-
-    // b) Swap: replace the largest selected slip that can be exchanged for a
-    //    cheaper unselected one while keeping the sum ≥ target.
-    outer: for (let i = 0; i < n; i++) {
-      if (!inSelection[i]) continue;
-      // Minimum amount the replacement must provide to keep sum ≥ target.
-      const minReplacement = target - (currentSum - amounts[i]);
-      // Scan from the smallest unselected slip upward to find the tightest fit.
-      for (let j = n - 1; j >= 0; j--) {
-        if (inSelection[j] || j === i) continue;
-        if (amounts[j] < amounts[i] && amounts[j] >= minReplacement) {
-          inSelection[i] = false;
-          inSelection[j] = true;
-          currentSum = currentSum - amounts[i] + amounts[j];
-          improved = true;
-          break outer;
-        }
-      }
+  // ── Step 2: Trim excess ─────────────────────────────────────────────────────
+  // Drop the most recently added (newest) selected slips first, as long as the
+  // remaining sum still covers the target — this keeps the oldest slips in the
+  // selection instead of swapping them out for a tighter numeric fit.
+  for (let i = n - 1; i >= 0; i--) {
+    if (!inSelection[i]) continue;
+    if (currentSum - amounts[i] >= target) {
+      inSelection[i] = false;
+      currentSum -= amounts[i];
     }
   }
 
