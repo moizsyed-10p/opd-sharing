@@ -21,6 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { PDFDocument } from "pdf-lib";
+import { format } from "date-fns";
 import {
   Download, FileText, CheckCircle, MoreHorizontal, RotateCcw,
   Pencil, Check, X, Sparkles, Loader2, Users, Target, AlertTriangle,
@@ -132,6 +133,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
 
   const slips = useQuery(api.slips.listGroupSlips, { groupId, filter });
   const allSlips = useQuery(api.slips.listGroupSlips, { groupId, filter: "all" });
+  const currentUser = useQuery(api.users.getCurrentUser, {});
   const claimSlip = useMutation(api.slips.claimSlip);
   const unclaimSlip = useMutation(api.slips.unclaimSlip);
   const updateAmount = useMutation(api.slips.updateSlipAmount);
@@ -258,7 +260,9 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `smart-match-₨${fmt(total)}.pdf`;
+      const firstName = (currentUser?.name?.split(" ")[0] ?? "User").replace(/[^a-zA-Z0-9]/g, "");
+      const monthName = format(new Date(), "MMMM");
+      a.download = `${firstName}_${monthName}_OPD_${Math.round(total)}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
