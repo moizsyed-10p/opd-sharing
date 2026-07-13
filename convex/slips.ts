@@ -60,7 +60,7 @@ export const listGroupSlips = query({
     const slips = await ctx.db
       .query("opdSlips")
       .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
-      .order("asc")
+      .order("desc")
       .collect();
 
     // Get all usage records for this group in one query
