@@ -364,11 +364,12 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
 
       const originalBuffer = await file.arrayBuffer();
 
-      // Extract amounts from the original (text-layer intact) PDF before
-      // rasterizing — cropping/compressing below flattens pages to images.
+      // pdfjs transfers (detaches) the ArrayBuffer it's given to its worker,
+      // so each pdfjs.getDocument call below needs its own untouched copy —
+      // reusing originalBuffer twice would silently fail the second call.
       let extractedAmounts: number[] = [];
       try {
-        extractedAmounts = await extractAmountsFromPdf(originalBuffer);
+        extractedAmounts = await extractAmountsFromPdf(originalBuffer.slice(0));
       } catch {
         extractedAmounts = [];
       }
@@ -382,9 +383,10 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
 
       let uploadFile: Blob;
       try {
-        uploadFile = await cropAndCompressPdf(originalBuffer);
-      } catch {
+        uploadFile = await cropAndCompressPdf(originalBuffer.slice(0));
+      } catch (err) {
         // Fall back to the original file if rasterization fails for any page.
+        console.error("cropAndCompressPdf failed, uploading original PDF:", err);
         uploadFile = file;
       }
 
