@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog.tsx";
 import { PDFDocument } from "pdf-lib";
 import { format } from "date-fns";
+import { compressPdfToMaxSize } from "@/lib/pdfTools.ts";
 import {
   Download, FileText, CheckCircle, MoreHorizontal, RotateCcw,
   Pencil, Check, X, Sparkles, Loader2, Users, Target, AlertTriangle,
@@ -115,6 +116,8 @@ async function mergePdfs(slips: Slip[]): Promise<Uint8Array> {
 
 const fmt = (n: number) => n.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
+const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
+
 export default function SlipPool({ groupId, isAdmin }: Props) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [claimingId, setClaimingId] = useState<Id<"opdSlips"> | null>(null);
@@ -181,7 +184,8 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
 
       if (slipsWithUrls.length > 0) {
         const mergedBytes = await mergePdfs(slipsWithUrls);
-        const blob = new Blob([mergedBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+        const finalBytes = await compressPdfToMaxSize(mergedBytes, MAX_DOWNLOAD_BYTES);
+        const blob = new Blob([finalBytes.buffer as ArrayBuffer], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -256,7 +260,8 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
       }
       const slipsWithUrls = selectedSlips.map((s, i) => ({ ...s, url: claimedUrls[i] ?? s.url }));
       const mergedBytes = await mergePdfs(slipsWithUrls);
-      const blob = new Blob([mergedBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+      const finalBytes = await compressPdfToMaxSize(mergedBytes, MAX_DOWNLOAD_BYTES);
+      const blob = new Blob([finalBytes.buffer as ArrayBuffer], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

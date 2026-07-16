@@ -12,14 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Upload, FileText, CheckCircle, Loader2, AlertCircle, Image, Camera, AlertTriangle, ChevronLeft, ChevronRight, Crop } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { PDFDocument } from "pdf-lib";
-import * as pdfjsLib from "pdfjs-dist";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+import { pdfjsLib, detectDocumentBounds, cropAndCompressPdf } from "@/lib/pdfTools.ts";
 
 type SlipReview = {
   pageNumber: number;
@@ -230,6 +225,33 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
     updateCropItem(uploadState.currentIndex, { crop });
   };
 
+  // Auto-detect the document edges as soon as the image loads, pre-filling
+  // the crop box so the user only has to adjust it (never draw from scratch).
+  const handleCropImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    if (uploadState.status !== "crop") return;
+    const idx = uploadState.currentIndex;
+    const item = uploadState.items[idx];
+    if (item.crop) return;
+
+    const imgEl = e.currentTarget;
+    const scale = Math.min(1, 700 / Math.max(imgEl.naturalWidth, imgEl.naturalHeight));
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = Math.round(imgEl.naturalWidth * scale);
+    sampleCanvas.height = Math.round(imgEl.naturalHeight * scale);
+    sampleCanvas.getContext("2d")!.drawImage(imgEl, 0, 0, sampleCanvas.width, sampleCanvas.height);
+
+    const bounds = detectDocumentBounds(sampleCanvas);
+    updateCropItem(idx, {
+      crop: {
+        unit: "px",
+        x: (bounds.x / sampleCanvas.width) * imgEl.width,
+        y: (bounds.y / sampleCanvas.height) * imgEl.height,
+        width: (bounds.width / sampleCanvas.width) * imgEl.width,
+        height: (bounds.height / sampleCanvas.height) * imgEl.height,
+      },
+    });
+  };
+
   const handleApplyCrop = async () => {
     if (uploadState.status !== "crop") return;
     const item = uploadState.items[uploadState.currentIndex];
@@ -325,7 +347,7 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
     setUploadState({ status: "review", files: reviewFiles });
   }, []);
 
-  // ─── Process PDFs (no crop needed) ──────────────────────────
+  // ─── Process PDFs (auto-crop + compress each page) ──────────
   const processPdfFiles = useCallback(async (files: File[]) => {
     const reviewFiles: Array<{ fileName: string; uploadFile: Blob; slips: SlipReview[] }> = [];
 
@@ -340,16 +362,34 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
         total: files.length,
       });
 
+      const originalBuffer = await file.arrayBuffer();
+
+      // Extract amounts from the original (text-layer intact) PDF before
+      // rasterizing — cropping/compressing below flattens pages to images.
       let extractedAmounts: number[] = [];
       try {
-        const buffer = await file.arrayBuffer();
-        extractedAmounts = await extractAmountsFromPdf(buffer);
+        extractedAmounts = await extractAmountsFromPdf(originalBuffer);
       } catch {
         extractedAmounts = [];
       }
 
+      setUploadState({
+        status: "converting",
+        fileName,
+        current: idx + 1,
+        total: files.length,
+      });
+
+      let uploadFile: Blob;
+      try {
+        uploadFile = await cropAndCompressPdf(originalBuffer);
+      } catch {
+        // Fall back to the original file if rasterization fails for any page.
+        uploadFile = file;
+      }
+
       const pdf = await pdfjsLib.getDocument({
-        data: new Uint8Array(await file.arrayBuffer()),
+        data: new Uint8Array(await uploadFile.arrayBuffer()),
       }).promise;
       const pageCount = pdf.numPages;
 
@@ -361,7 +401,7 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
         fileName,
       }));
 
-      reviewFiles.push({ fileName, uploadFile: file, slips });
+      reviewFiles.push({ fileName, uploadFile, slips });
     }
 
     setUploadState({ status: "review", files: reviewFiles });
@@ -758,12 +798,13 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
                       src={item.objectUrl}
                       alt="Crop preview"
                       style={{ maxHeight: "280px", objectFit: "contain" }}
+                      onLoad={handleCropImageLoad}
                     />
                   </ReactCrop>
                 </div>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  Draw a selection to crop, or skip to use the full image
+                  Auto-detected crop shown — adjust the selection or skip to use the full image
                 </p>
 
                 <div className="flex gap-2">
@@ -791,7 +832,7 @@ export default function PdfUploader({ groupId, onComplete }: Props) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{uploadState.fileName}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Converting image {uploadState.current} of {uploadState.total}...
+                  Auto-cropping & compressing {uploadState.current} of {uploadState.total}...
                 </p>
               </div>
               <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
