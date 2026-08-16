@@ -201,3 +201,89 @@ export const deleteOpdFile = mutation({
     await ctx.db.delete(args.fileId);
   },
 });
+
+async function requireAdmin(ctx: MutationCtx | QueryCtx, groupId: Id<"groups">) {
+  const { user, membership } = await requireGroupMember(ctx, groupId);
+  if (membership.role !== "admin") {
+    throw new ConvexError({ message: "Only admins can do this", code: "FORBIDDEN" });
+  }
+  return user;
+}
+
+async function groupFullyUsedByFile(ctx: MutationCtx | QueryCtx, groupId: Id<"groups">) {
+  const usedSlips = await ctx.db
+    .query("opdSlips")
+    .withIndex("by_group_and_used", (q) => q.eq("groupId", groupId).eq("isUsed", true))
+    .collect();
+
+  const byFile = new Map<Id<"opdFiles">, typeof usedSlips>();
+  for (const slip of usedSlips) {
+    const arr = byFile.get(slip.fileId) ?? [];
+    arr.push(slip);
+    byFile.set(slip.fileId, arr);
+  }
+
+  const fullyDeletableFiles: Id<"opdFiles">[] = [];
+  for (const [fileId, slips] of byFile) {
+    const allSlipsForFile = await ctx.db
+      .query("opdSlips")
+      .withIndex("by_file", (q) => q.eq("fileId", fileId))
+      .collect();
+    if (allSlipsForFile.every((s) => s.isUsed)) {
+      fullyDeletableFiles.push(fileId);
+    }
+    void slips;
+  }
+
+  return { usedSlips, fullyDeletableFiles };
+}
+
+export const previewBulkCleanup = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.groupId);
+    const { usedSlips, fullyDeletableFiles } = await groupFullyUsedByFile(ctx, args.groupId);
+    return {
+      slipsToDelete: usedSlips.length,
+      filesToDelete: fullyDeletableFiles.length,
+    };
+  },
+});
+
+export const bulkDeleteUsedSlips = mutation({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.groupId);
+    const { usedSlips } = await groupFullyUsedByFile(ctx, args.groupId);
+
+    const affectedFileIds = new Set(usedSlips.map((s) => s.fileId));
+
+    for (const slip of usedSlips) {
+      await ctx.storage.delete(slip.storageId as Id<"_storage">);
+      const usages = await ctx.db
+        .query("userOpdUsage")
+        .withIndex("by_slip", (q) => q.eq("slipId", slip._id))
+        .collect();
+      for (const u of usages) await ctx.db.delete(u._id);
+      await ctx.db.delete(slip._id);
+    }
+
+    let deletedFiles = 0;
+    for (const fileId of affectedFileIds) {
+      const remaining = await ctx.db
+        .query("opdSlips")
+        .withIndex("by_file", (q) => q.eq("fileId", fileId))
+        .collect();
+      if (remaining.length === 0) {
+        const file = await ctx.db.get(fileId);
+        if (file) {
+          await ctx.storage.delete(file.storageId as Id<"_storage">);
+          await ctx.db.delete(fileId);
+          deletedFiles++;
+        }
+      }
+    }
+
+    return { deletedSlips: usedSlips.length, deletedFiles };
+  },
+});

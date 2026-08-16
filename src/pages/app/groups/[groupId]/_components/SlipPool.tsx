@@ -35,6 +35,7 @@ type FilterType = "all" | "available" | "claimed";
 type Props = {
   groupId: Id<"groups">;
   isAdmin: boolean;
+  canClaim: boolean;
 };
 
 type Slip = {
@@ -118,7 +119,7 @@ const fmt = (n: number) => n.toLocaleString("en-PK", { minimumFractionDigits: 0,
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 
-export default function SlipPool({ groupId, isAdmin }: Props) {
+export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [claimingId, setClaimingId] = useState<Id<"opdSlips"> | null>(null);
   const [editingAmountId, setEditingAmountId] = useState<Id<"opdSlips"> | null>(null);
@@ -167,7 +168,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
   const clearSelection = () => setSelectedIds(new Set());
 
   const handleBulkClaim = async () => {
-    if (selectedClaimable.length === 0) return;
+    if (!canClaim || selectedClaimable.length === 0) return;
     setIsBulkProcessing(true);
     try {
       const claimedUrls: string[] = [];
@@ -284,7 +285,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
   };
 
   const handleClaim = async (slip: Slip) => {
-    if (claimingId) return;
+    if (!canClaim || claimingId) return;
     setClaimingId(slip._id);
     try {
       const { url } = await claimSlip({ slipId: slip._id });
@@ -482,10 +483,17 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
         </DialogContent>
       </Dialog>
 
+      {!canClaim && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border text-xs text-muted-foreground">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          You have upload-only access — you can upload slips but not claim them.
+        </div>
+      )}
+
       {/* Header row */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">Slip Pool</h3>
-        {available > 0 && (
+        {canClaim && available > 0 && (
           <Button
             size="sm"
             className="cursor-pointer h-7 text-xs gap-1.5 bg-gradient-to-r from-violet-500 to-primary hover:from-violet-600 hover:to-primary/90 text-white border-0 shadow-sm shadow-primary/30"
@@ -556,6 +564,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
                     key={slip._id}
                     slip={slip}
                     isAdmin={isAdmin}
+                    canClaim={canClaim}
                     isSelected={selectedIds.has(slip._id)}
                     isClaiming={claimingId === slip._id}
                     isEditingAmount={editingAmountId === slip._id}
@@ -624,6 +633,7 @@ export default function SlipPool({ groupId, isAdmin }: Props) {
 type SlipRowProps = {
   slip: Slip;
   isAdmin: boolean;
+  canClaim: boolean;
   isSelected: boolean;
   isClaiming: boolean;
   isEditingAmount: boolean;
@@ -638,7 +648,7 @@ type SlipRowProps = {
 };
 
 function SlipRow({
-  slip, isAdmin, isSelected, isClaiming, isEditingAmount,
+  slip, isAdmin, canClaim, isSelected, isClaiming, isEditingAmount,
   amountInput, onToggleSelect, onClaim, onUnclaim, onStartEdit,
   onSaveAmount, onCancelEdit, onAmountInputChange,
 }: SlipRowProps) {
@@ -745,7 +755,7 @@ function SlipRow({
             View
           </Button>
         )}
-        {!slip.isClaimedByMe && (
+        {!slip.isClaimedByMe && canClaim && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>

@@ -20,6 +20,9 @@ export default defineSchema({
     groupId: v.id("groups"),
     userId: v.id("users"),
     role: v.union(v.literal("admin"), v.literal("member")),
+    permission: v.optional(
+      v.union(v.literal("upload_only"), v.literal("claim_and_upload"))
+    ),
   })
     .index("by_group", ["groupId"])
     .index("by_user", ["userId"])

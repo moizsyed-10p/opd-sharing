@@ -17,23 +17,32 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog.tsx";
 import {
-  ArrowLeft, Copy, Shield, User, LogOut, Users, FileText, Layers, BarChart2, BookmarkCheck,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select.tsx";
+import {
+  ArrowLeft, Copy, Shield, User, LogOut, Users, FileText, Layers, BarChart2, BookmarkCheck, UserX,
 } from "lucide-react";
+import { ConvexError } from "convex/values";
 import PdfUploader from "./_components/PdfUploader.tsx";
 import FileList from "./_components/FileList.tsx";
 import SlipPool from "./_components/SlipPool.tsx";
 import Dashboard from "./_components/Dashboard.tsx";
 import MyClaims from "./_components/MyClaims.tsx";
+import ClaimReminderBanner from "./_components/ClaimReminderBanner.tsx";
 
 export default function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
   const leaveGroup = useMutation(api.groups.leaveGroup);
+  const updateMemberPermission = useMutation(api.groups.updateMemberPermission);
+  const removeMember = useMutation(api.groups.removeMember);
 
   const group = useQuery(api.groups.getGroup, groupId ? { groupId: groupId as Id<"groups"> } : "skip");
   const members = useQuery(api.groups.getGroupMembers, groupId ? { groupId: groupId as Id<"groups"> } : "skip");
+  const currentUser = useQuery(api.users.getCurrentUser, {});
 
   const [membersOpen, setMembersOpen] = useState(false);
+  const [tab, setTab] = useState("dashboard");
 
   const copyInviteCode = () => {
     if (group?.inviteCode) {
@@ -50,6 +59,35 @@ export default function GroupDetailPage() {
       navigate("/groups");
     } catch {
       toast.error("Failed to leave group");
+    }
+  };
+
+  const handlePermissionChange = async (
+    userId: Id<"users">,
+    permission: "upload_only" | "claim_and_upload"
+  ) => {
+    if (!groupId) return;
+    try {
+      await updateMemberPermission({ groupId: groupId as Id<"groups">, userId, permission });
+      toast.success("Permission updated");
+    } catch (err) {
+      const msg = err instanceof ConvexError
+        ? (err.data as { message: string }).message
+        : "Failed to update permission";
+      toast.error(msg);
+    }
+  };
+
+  const handleRemoveMember = async (userId: Id<"users">) => {
+    if (!groupId) return;
+    try {
+      await removeMember({ groupId: groupId as Id<"groups">, userId });
+      toast.success("Member removed");
+    } catch (err) {
+      const msg = err instanceof ConvexError
+        ? (err.data as { message: string }).message
+        : "Failed to remove member";
+      toast.error(msg);
     }
   };
 
@@ -113,23 +151,77 @@ export default function GroupDetailPage() {
                 <DialogTitle>Group Members</DialogTitle>
               </DialogHeader>
               <div className="space-y-2 pt-2">
-                {members?.map((m) => m && (
-                  <div key={m._id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50">
-                    <Avatar className="w-8 h-8">
-                      <AvatarImage src={m.user?.avatarUrl} />
-                      <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                        {m.user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "?"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{m.user?.name ?? "Unknown"}</p>
-                      <p className="text-xs text-muted-foreground truncate">{m.user?.email}</p>
+                {members?.map((m) => {
+                  if (!m) return null;
+                  const isSelf = m.userId === currentUser?._id;
+                  return (
+                    <div key={m._id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50">
+                      <Avatar className="w-8 h-8">
+                        <AvatarImage src={m.user?.avatarUrl} />
+                        <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                          {m.user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{m.user?.name ?? "Unknown"}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.user?.email}</p>
+                      </div>
+                      <Badge variant={m.role === "admin" ? "default" : "outline"} className="text-xs shrink-0">
+                        {m.role}
+                      </Badge>
+                      {isAdmin ? (
+                        <Select
+                          value={m.permission}
+                          onValueChange={(v) =>
+                            handlePermissionChange(m.userId, v as "upload_only" | "claim_and_upload")
+                          }
+                        >
+                          <SelectTrigger size="sm" className="w-[130px] text-xs shrink-0 cursor-pointer">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="claim_and_upload">Claim & upload</SelectItem>
+                            <SelectItem value="upload_only">Upload only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        m.permission === "upload_only" && (
+                          <Badge variant="outline" className="text-[10px] shrink-0">Upload only</Badge>
+                        )
+                      )}
+                      {isAdmin && !isSelf && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="cursor-pointer h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0"
+                            >
+                              <UserX className="w-3.5 h-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove {m.user?.name ?? "this member"}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                They will lose access to this group. Their claim and upload history is preserved.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleRemoveMember(m.userId)}
+                                className="cursor-pointer bg-destructive hover:bg-destructive/90"
+                              >
+                                Remove
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
-                    <Badge variant={m.role === "admin" ? "default" : "outline"} className="text-xs">
-                      {m.role}
-                    </Badge>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </DialogContent>
           </Dialog>
@@ -171,8 +263,10 @@ export default function GroupDetailPage() {
         </Button>
       </div>
       
+      <ClaimReminderBanner groupId={gId} onGoToPool={() => setTab("pool")} />
+
       {/* Tabs */}
-      <Tabs defaultValue="dashboard">
+      <Tabs value={tab} onValueChange={setTab}>
         <div className="flex items-center justify-between mb-4 gap-2">
           <TabsList className="h-8 overflow-x-auto flex-1 justify-start">
             <TabsTrigger value="dashboard" className="cursor-pointer text-xs gap-1 h-6 px-2 shrink-0">
@@ -204,7 +298,7 @@ export default function GroupDetailPage() {
         </TabsContent>
 
         <TabsContent value="pool">
-          <SlipPool groupId={gId} isAdmin={isAdmin} />
+          <SlipPool groupId={gId} isAdmin={isAdmin} canClaim={group.permission !== "upload_only"} />
         </TabsContent>
 
         <TabsContent value="my-claims">

@@ -1,6 +1,13 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
+import type { Doc } from "./_generated/dataModel.d.ts";
+
+export function effectivePermission(
+  m: Pick<Doc<"groupMembers">, "permission">
+): "upload_only" | "claim_and_upload" {
+  return m.permission ?? "claim_and_upload";
+}
 
 function generateInviteCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -123,7 +130,9 @@ export const getGroup = query({
     if (!membership) return null;
 
     const group = await ctx.db.get(args.groupId);
-    return group ? { ...group, role: membership.role } : null;
+    return group
+      ? { ...group, role: membership.role, permission: effectivePermission(membership) }
+      : null;
   },
 });
 
@@ -154,7 +163,7 @@ export const getGroupMembers = query({
     return Promise.all(
       members.map(async (m) => {
         const memberUser = await ctx.db.get(m.userId);
-        return { ...m, user: memberUser };
+        return { ...m, permission: effectivePermission(m), user: memberUser };
       })
     );
   },
@@ -172,5 +181,75 @@ export const leaveGroup = mutation({
       .unique();
     if (!membership) throw new ConvexError({ message: "Not a member", code: "NOT_FOUND" });
     await ctx.db.delete(membership._id);
+  },
+});
+
+async function requireAdminMembership(
+  ctx: MutationCtx,
+  groupId: import("./_generated/dataModel.d.ts").Id<"groups">
+) {
+  const user = await getAuthenticatedUser(ctx);
+  const membership = await ctx.db
+    .query("groupMembers")
+    .withIndex("by_group_and_user", (q) => q.eq("groupId", groupId).eq("userId", user._id))
+    .unique();
+  if (!membership || membership.role !== "admin") {
+    throw new ConvexError({ message: "Only admins can do this", code: "FORBIDDEN" });
+  }
+  return { user, membership };
+}
+
+export const updateMemberPermission = mutation({
+  args: {
+    groupId: v.id("groups"),
+    userId: v.id("users"),
+    permission: v.union(v.literal("upload_only"), v.literal("claim_and_upload")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdminMembership(ctx, args.groupId);
+    const target = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q) =>
+        q.eq("groupId", args.groupId).eq("userId", args.userId)
+      )
+      .unique();
+    if (!target) throw new ConvexError({ message: "Member not found", code: "NOT_FOUND" });
+    await ctx.db.patch(target._id, { permission: args.permission });
+  },
+});
+
+export const removeMember = mutation({
+  args: { groupId: v.id("groups"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdminMembership(ctx, args.groupId);
+    if (args.userId === user._id) {
+      throw new ConvexError({ message: "Use 'Leave group' to remove yourself", code: "BAD_REQUEST" });
+    }
+
+    const target = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q) =>
+        q.eq("groupId", args.groupId).eq("userId", args.userId)
+      )
+      .unique();
+    if (!target) throw new ConvexError({ message: "Member not found", code: "NOT_FOUND" });
+
+    if (target.role === "admin") {
+      const allMembers = await ctx.db
+        .query("groupMembers")
+        .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+        .collect();
+      const adminCount = allMembers.filter((m) => m.role === "admin").length;
+      if (adminCount <= 1) {
+        throw new ConvexError({
+          message: "Group must have at least one admin",
+          code: "BAD_REQUEST",
+        });
+      }
+    }
+
+    // Intentionally leave userOpdUsage and opdFiles.uploadedBy untouched —
+    // claim/upload history is preserved after a member is removed.
+    await ctx.db.delete(target._id);
   },
 });

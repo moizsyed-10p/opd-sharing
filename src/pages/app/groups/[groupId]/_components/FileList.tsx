@@ -14,7 +14,7 @@ import {
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
 } from "@/components/ui/collapsible.tsx";
-import { FileText, Trash2, ChevronDown, Loader2, CheckCircle, AlertCircle, Clock, Eye } from "lucide-react";
+import { FileText, Trash2, ChevronDown, Loader2, CheckCircle, AlertCircle, Clock, Eye, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import SlipPreviewList from "./SlipPreviewList.tsx";
 import { useState } from "react";
@@ -35,7 +35,13 @@ const statusConfig = {
 export default function FileList({ groupId, isAdmin }: Props) {
   const files = useQuery(api.files.listOpdFiles, { groupId });
   const deleteFile = useMutation(api.files.deleteOpdFile);
+  const bulkDeleteUsedSlips = useMutation(api.files.bulkDeleteUsedSlips);
+  const cleanupPreview = useQuery(
+    api.files.previewBulkCleanup,
+    isAdmin ? { groupId } : "skip"
+  );
   const [expandedFileId, setExpandedFileId] = useState<Id<"opdFiles"> | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
 
   const handleDelete = async (fileId: Id<"opdFiles">) => {
     try {
@@ -46,6 +52,22 @@ export default function FileList({ groupId, isAdmin }: Props) {
         ? (err.data as { message: string }).message
         : "Failed to delete file";
       toast.error(msg);
+    }
+  };
+
+  const handleBulkCleanup = async () => {
+    setIsCleaning(true);
+    try {
+      const result = await bulkDeleteUsedSlips({ groupId });
+      toast.success(`Removed ${result.deletedSlips} used slip${result.deletedSlips !== 1 ? "s" : ""}` +
+        (result.deletedFiles > 0 ? ` and ${result.deletedFiles} file${result.deletedFiles !== 1 ? "s" : ""}` : ""));
+    } catch (err) {
+      const msg = err instanceof ConvexError
+        ? (err.data as { message: string }).message
+        : "Failed to clean up used documents";
+      toast.error(msg);
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -73,6 +95,44 @@ export default function FileList({ groupId, isAdmin }: Props) {
 
   return (
     <div className="space-y-5">
+      {isAdmin && cleanupPreview && cleanupPreview.slipsToDelete > 0 && (
+        <div className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/30">
+          <p className="text-xs text-muted-foreground">
+            {cleanupPreview.slipsToDelete} fully-claimed slip{cleanupPreview.slipsToDelete !== 1 ? "s" : ""}
+            {cleanupPreview.filesToDelete > 0
+              ? ` across ${cleanupPreview.filesToDelete} file${cleanupPreview.filesToDelete !== 1 ? "s" : ""}`
+              : ""} can be cleaned up from storage.
+          </p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="outline" className="cursor-pointer h-7 text-xs gap-1.5 shrink-0" disabled={isCleaning}>
+                <Sparkles className="w-3.5 h-3.5" />
+                Clean up used documents
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete all fully-claimed documents?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete {cleanupPreview.slipsToDelete} slip{cleanupPreview.slipsToDelete !== 1 ? "s" : ""}
+                  {cleanupPreview.filesToDelete > 0
+                    ? ` and ${cleanupPreview.filesToDelete} file${cleanupPreview.filesToDelete !== 1 ? "s" : ""} whose slips are all claimed`
+                    : ""} from storage. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleBulkCleanup}
+                  className="cursor-pointer bg-destructive hover:bg-destructive/90"
+                >
+                  Clean up
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
       {monthGroups.map((group) => (
         <div key={group.key} className="space-y-2">
           <p className="text-xs font-semibold text-muted-foreground">{group.label}</p>

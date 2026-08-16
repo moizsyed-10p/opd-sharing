@@ -1,6 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel.d.ts";
+import { effectivePermission } from "./groups.ts";
 
 export const groupDashboard = query({
   args: { groupId: v.id("groups") },
@@ -228,6 +229,61 @@ export const groupDashboard = query({
       uploadStats,
       recentActivity,
       slipsByFile,
+    };
+  },
+});
+
+// Whether to show the "claim your slips" reminder for the current user (after the 15th)
+export const getClaimReminderStatus = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, args): Promise<{
+    shouldRemind: boolean;
+    unclaimedCount: number;
+    monthLabel: string;
+  }> => {
+    const noReminder = { shouldRemind: false, unclaimedCount: 0, monthLabel: "" };
+
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return noReminder;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (!user) return noReminder;
+
+    const membership = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q) =>
+        q.eq("groupId", args.groupId).eq("userId", user._id)
+      )
+      .unique();
+    if (!membership) return noReminder;
+    if (effectivePermission(membership) === "upload_only") return noReminder;
+
+    const slips = await ctx.db
+      .query("opdSlips")
+      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+      .collect();
+
+    const myUsages = await ctx.db
+      .query("userOpdUsage")
+      .withIndex("by_group_and_user", (q) =>
+        q.eq("groupId", args.groupId).eq("userId", user._id)
+      )
+      .collect();
+    const myClaimedSlipIds = new Set(myUsages.map((u) => u.slipId));
+
+    const unclaimedCount = slips.filter((s) => !myClaimedSlipIds.has(s._id)).length;
+
+    const now = new Date();
+    const isPast15th = now.getDate() >= 15;
+    const monthLabel = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+
+    return {
+      shouldRemind: isPast15th && unclaimedCount > 0,
+      unclaimedCount,
+      monthLabel,
     };
   },
 });

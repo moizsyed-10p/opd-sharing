@@ -2,6 +2,7 @@ import { mutation, query, internalMutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel.d.ts";
+import { effectivePermission } from "./groups.ts";
 
 async function requireAuthUser(ctx: MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -135,6 +136,12 @@ export const claimSlip = mutation({
       .withIndex("by_group_and_user", (q) => q.eq("groupId", slip.groupId).eq("userId", user._id))
       .unique();
     if (!membership) throw new ConvexError({ message: "Not a group member", code: "FORBIDDEN" });
+    if (effectivePermission(membership) === "upload_only") {
+      throw new ConvexError({
+        message: "Your permission only allows uploading, not claiming",
+        code: "FORBIDDEN",
+      });
+    }
 
     // Check if current user already claimed this slip
     const existingUsage = await ctx.db
