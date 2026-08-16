@@ -76,7 +76,11 @@ export const groupDashboard = query({
       .query("groupMembers")
       .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
       .collect();
-    const memberCount = allMembers.length;
+    // Eligible-member count for "fully used" — upload_only members can never
+    // claim, so they shouldn't count toward a slip being fully used.
+    const eligibleMemberCount = allMembers.filter(
+      (m) => effectivePermission(m) !== "upload_only"
+    ).length;
 
     // Fetch all usages for this group
     const allUsages = await ctx.db
@@ -101,7 +105,7 @@ export const groupDashboard = query({
     const claimedSlips = slips.filter((s) => myClaimedSlipIds.has(s._id)).length;
     const availableSlips = totalSlips - claimedSlips;
     const fullyUsedSlips = slips.filter((s) =>
-      (claimCountMap.get(s._id) ?? 0) >= memberCount
+      (claimCountMap.get(s._id) ?? 0) >= eligibleMemberCount
     ).length;
 
     // Pool values from current user's perspective
@@ -205,7 +209,7 @@ export const groupDashboard = query({
       const fileSlips = slips.filter((s) => s.fileId === f._id);
       const claimedByMe = fileSlips.filter((s) => myClaimedSlipIds.has(s._id)).length;
       const fullyUsed = fileSlips.filter((s) =>
-        (claimCountMap.get(s._id) ?? 0) >= memberCount
+        (claimCountMap.get(s._id) ?? 0) >= eligibleMemberCount
       ).length;
       return {
         fileId: f._id,

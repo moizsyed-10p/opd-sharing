@@ -1,12 +1,25 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
-import type { Doc } from "./_generated/dataModel.d.ts";
+import type { Doc, Id } from "./_generated/dataModel.d.ts";
 
 export function effectivePermission(
   m: Pick<Doc<"groupMembers">, "permission">
 ): "upload_only" | "claim_and_upload" {
   return m.permission ?? "claim_and_upload";
+}
+
+// Members who can actually claim slips — "fully used" should only require
+// claims from these members, not from upload_only members who can never claim.
+export async function getClaimEligibleMemberCount(
+  ctx: MutationCtx | QueryCtx,
+  groupId: Id<"groups">
+): Promise<number> {
+  const members = await ctx.db
+    .query("groupMembers")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .collect();
+  return members.filter((m) => effectivePermission(m) !== "upload_only").length;
 }
 
 function generateInviteCode(): string {

@@ -2,7 +2,7 @@ import { mutation, query, internalMutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel.d.ts";
-import { effectivePermission } from "./groups.ts";
+import { effectivePermission, getClaimEligibleMemberCount } from "./groups.ts";
 
 async function requireAuthUser(ctx: MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -70,12 +70,10 @@ export const listGroupSlips = query({
       .withIndex("by_group_and_user", (q) => q.eq("groupId", args.groupId))
       .collect();
 
-    // Get total member count for this group
-    const allMembers = await ctx.db
-      .query("groupMembers")
-      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
-      .collect();
-    const memberCount = allMembers.length;
+    // Only claim-eligible members count toward "fully used" — upload_only
+    // members can never claim, so they shouldn't block a slip from being
+    // considered fully used.
+    const memberCount = await getClaimEligibleMemberCount(ctx, args.groupId);
 
     // Build a set of slipIds claimed by current user
     const myClaimedSlipIds = new Set(
@@ -163,18 +161,16 @@ export const claimSlip = mutation({
       claimedAt: now,
     });
 
-    // Check if all members have now claimed this slip
-    const allMembers = await ctx.db
-      .query("groupMembers")
-      .withIndex("by_group", (q) => q.eq("groupId", slip.groupId))
-      .collect();
+    // Check if all claim-eligible members have now claimed this slip
+    // (upload_only members are excluded — they can never claim).
+    const eligibleCount = await getClaimEligibleMemberCount(ctx, slip.groupId);
 
     const allUsages = await ctx.db
       .query("userOpdUsage")
       .withIndex("by_slip", (q) => q.eq("slipId", args.slipId))
       .collect();
 
-    if (allUsages.length >= allMembers.length) {
+    if (allUsages.length >= eligibleCount) {
       // All members claimed — mark as globally used
       await ctx.db.patch(args.slipId, {
         isUsed: true,
