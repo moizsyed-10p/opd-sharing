@@ -28,3 +28,6 @@ tsconfig.tsbuildinfo
 
 # Environment variables
 .env*
+
+# Local project notes
+specs.md
