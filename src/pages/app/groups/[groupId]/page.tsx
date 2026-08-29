@@ -29,6 +29,7 @@ import SlipPool from "./_components/SlipPool.tsx";
 import Dashboard from "./_components/Dashboard.tsx";
 import MyClaims from "./_components/MyClaims.tsx";
 import ClaimReminderBanner from "./_components/ClaimReminderBanner.tsx";
+import ErrorLogPanel from "./_components/ErrorLogPanel.tsx";
 
 export default function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -309,6 +310,8 @@ export default function GroupDetailPage() {
           <FileList groupId={gId} isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
+
+      {isAdmin && <ErrorLogPanel groupId={gId} />}
     </div>
   );
 }

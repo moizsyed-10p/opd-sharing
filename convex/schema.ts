@@ -67,4 +67,19 @@ export default defineSchema({
     .index("by_slip", ["slipId"])
     .index("by_group_and_user", ["groupId", "userId"])
     .index("by_slip_and_user", ["slipId", "userId"]),
+
+  // Frontend errors reported from the claim/download flow, so a failure that
+  // never reaches Convex's own function logs (it happens client-side, after
+  // the mutation already succeeded) still leaves a trace we can look up.
+  clientErrorLogs: defineTable({
+    userId: v.optional(v.id("users")),
+    groupId: v.optional(v.id("groups")),
+    context: v.string(), // e.g. "bulk_claim", "smart_match", "single_claim"
+    message: v.string(),
+    stack: v.optional(v.string()),
+    slipIds: v.optional(v.array(v.id("opdSlips"))),
+    userAgent: v.optional(v.string()),
+  })
+    .index("by_group", ["groupId"])
+    .index("by_user", ["userId"]),
 });

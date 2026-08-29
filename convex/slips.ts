@@ -184,7 +184,8 @@ export const claimSlip = mutation({
   },
 });
 
-// Unclaim a slip for a specific user (admin only)
+// Unclaim a slip. Any member can unclaim their own claim (e.g. to roll back
+// a claim after a failed download); only admins can unclaim someone else's.
 export const unclaimSlip = mutation({
   args: {
     slipId: v.id("opdSlips"),
@@ -199,11 +200,13 @@ export const unclaimSlip = mutation({
       .query("groupMembers")
       .withIndex("by_group_and_user", (q) => q.eq("groupId", slip.groupId).eq("userId", user._id))
       .unique();
-    if (!membership || membership.role !== "admin") {
-      throw new ConvexError({ message: "Only admins can unclaim slips", code: "FORBIDDEN" });
-    }
+    if (!membership) throw new ConvexError({ message: "Not a group member", code: "FORBIDDEN" });
 
     const targetId = args.targetUserId ?? user._id;
+    const isSelf = targetId === user._id;
+    if (!isSelf && membership.role !== "admin") {
+      throw new ConvexError({ message: "Only admins can unclaim other members' slips", code: "FORBIDDEN" });
+    }
 
     // Remove usage record for target user
     const usage = await ctx.db

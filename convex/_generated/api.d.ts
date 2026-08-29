@@ -9,6 +9,7 @@
  */
 
 import type * as amountMatchingAction from "../amountMatchingAction.js";
+import type * as clientLogs from "../clientLogs.js";
 import type * as dashboard from "../dashboard.js";
 import type * as files from "../files.js";
 import type * as groups from "../groups.js";
@@ -24,6 +25,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   amountMatchingAction: typeof amountMatchingAction;
+  clientLogs: typeof clientLogs;
   dashboard: typeof dashboard;
   files: typeof files;
   groups: typeof groups;

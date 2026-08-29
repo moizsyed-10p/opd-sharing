@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { groupByMonth } from "@/lib/groupByMonth.ts";
+import { logClientError } from "@/lib/logClientError.ts";
 
 type FilterType = "all" | "available" | "claimed";
 
@@ -167,13 +168,24 @@ export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
 
   const clearSelection = () => setSelectedIds(new Set());
 
+  // Best-effort rollback: if a claim succeeded server-side but the
+  // merge/compress/download step afterward failed, undo those claims so the
+  // slips return to the pool instead of vanishing with no file to show for it.
+  const rollbackClaims = async (slipIds: Id<"opdSlips">[]) => {
+    await Promise.all(
+      slipIds.map((slipId) => unclaimSlip({ slipId }).catch(() => {}))
+    );
+  };
+
   const handleBulkClaim = async () => {
     if (!canClaim || selectedClaimable.length === 0) return;
     setIsBulkProcessing(true);
+    const claimedSlipIds: Id<"opdSlips">[] = [];
     try {
       const claimedUrls: string[] = [];
       for (const slip of selectedClaimable) {
         const { url } = await claimSlip({ slipId: slip._id });
+        claimedSlipIds.push(slip._id);
         if (url) claimedUrls.push(url);
       }
 
@@ -200,9 +212,13 @@ export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
       toast.success(`${selectedClaimable.length} slip${selectedClaimable.length !== 1 ? "s" : ""} claimed & downloaded`);
       clearSelection();
     } catch (err) {
+      if (claimedSlipIds.length > 0) {
+        await rollbackClaims(claimedSlipIds);
+      }
+      await logClientError({ context: "bulk_claim", error: err, groupId, slipIds: claimedSlipIds });
       const msg = err instanceof ConvexError
         ? (err.data as { message: string }).message
-        : "Bulk claim failed";
+        : "Download failed — your claim was rolled back, please try again";
       toast.error(msg);
     } finally {
       setIsBulkProcessing(false);
@@ -253,10 +269,12 @@ export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
     if (smartMatchState.step !== "preview") return;
     const { selectedSlips, total } = smartMatchState;
     setSmartMatchState({ step: "claiming" });
+    const claimedSlipIds: Id<"opdSlips">[] = [];
     try {
       const claimedUrls: string[] = [];
       for (const slip of selectedSlips) {
         const { url } = await claimSlip({ slipId: slip._id });
+        claimedSlipIds.push(slip._id);
         if (url) claimedUrls.push(url);
       }
       const slipsWithUrls = selectedSlips.map((s, i) => ({ ...s, url: claimedUrls[i] ?? s.url }));
@@ -276,9 +294,13 @@ export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
       setSmartMatchState({ step: "done", total, count: selectedSlips.length });
       toast.success(`Downloaded ${selectedSlips.length} slips totalling ₨${fmt(total)}`);
     } catch (err) {
+      if (claimedSlipIds.length > 0) {
+        await rollbackClaims(claimedSlipIds);
+      }
+      await logClientError({ context: "smart_match", error: err, groupId, slipIds: claimedSlipIds });
       const msg = err instanceof ConvexError
         ? (err.data as { message: string }).message
-        : "Failed to claim slips";
+        : "Download failed — your claim was rolled back, please try again";
       toast.error(msg);
       setSmartMatchState({ step: "preview", selectedSlips, total });
     }
@@ -302,6 +324,7 @@ export default function SlipPool({ groupId, isAdmin, canClaim }: Props) {
         document.body.removeChild(a);
       }
     } catch (err) {
+      await logClientError({ context: "single_claim", error: err, groupId, slipIds: [slip._id] });
       const msg = err instanceof ConvexError
         ? (err.data as { message: string }).message
         : "Failed to claim slip";
