@@ -5,6 +5,8 @@ export type MonthGroup<T> = { key: string; label: string; items: T[] };
 /**
  * Groups items by month (newest month first), using the given item's
  * timestamp. `getDate` may return a Date, ISO string, or epoch ms.
+ * Items within each month are also sorted newest first, regardless of
+ * the order they were passed in.
  */
 export function groupByMonth<T>(
   items: T[],
@@ -21,6 +23,12 @@ export function groupByMonth<T>(
     } else {
       groups.set(key, { key, label: format(date, "MMMM yyyy"), items: [item] });
     }
+  }
+
+  for (const group of groups.values()) {
+    group.items.sort(
+      (a, b) => new Date(getDate(b)).getTime() - new Date(getDate(a)).getTime()
+    );
   }
 
   return [...groups.values()].sort((a, b) => b.key.localeCompare(a.key));
