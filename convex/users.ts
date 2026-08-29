@@ -1,5 +1,5 @@
 import { mutation, query } from "./_generated/server";
-import { v, ConvexError } from "convex/values";
+import { v } from "convex/values";
 
 // convex/users.ts
 export const updateCurrentUser = mutation({
@@ -21,7 +21,7 @@ export const updateCurrentUser = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         name,
-        email: identity.email,
+        email: existing.email ?? identity.email,
         avatarUrl: identity.profileUrl,
       });
       return existing._id;
