@@ -134,7 +134,11 @@ export async function cropAndCompressPdf(pdfBytes: ArrayBuffer): Promise<Blob> {
  * a compression-only pass (no cropping), used for the final merged download.
  */
 async function rasterizePdf(pdfBytes: Uint8Array, scale: number, quality: number): Promise<Uint8Array> {
-  const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+  // pdf.js transfers (detaches) the underlying ArrayBuffer to its worker, so a
+  // fresh copy is required on every call — reusing the same buffer across
+  // repeated calls (as compressPdfToMaxSize does in its retry loop) throws
+  // "An ArrayBuffer is detached and could not be cloned" on the 2nd+ attempt.
+  const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice() }).promise;
   const outDoc = await PDFDocument.create();
 
   for (let i = 1; i <= pdf.numPages; i++) {
